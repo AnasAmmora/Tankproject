@@ -733,6 +733,7 @@ GameObject:
   - component: {fileID: 1254767847}
   - component: {fileID: 1254767849}
   - component: {fileID: 1254767850}
+  - component: {fileID: 1254767851}
   m_Layer: 0
   m_Name: CinemachineCamera
   m_TagString: Untagged
@@ -816,7 +817,7 @@ MonoBehaviour:
   CameraSide: 0.5
   CameraDistance: 1
   AvoidObstacles:
-    Enabled: 1
+    Enabled: 0
     CollisionFilter:
       serializedVersion: 2
       m_Bits: 256
@@ -848,6 +849,36 @@ MonoBehaviour:
     FrequencyGain: 1
     Duration: 1
     m_NoiseOffsets: {x: 0, y: 0, z: 0}
+--- !u!114 &1254767851
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1254767846}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca7de3aefa901374ba29464584a3109a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Cinemachine::Unity.Cinemachine.CinemachineDecollider
+  CameraRadius: 0.4
+  Decollision:
+    Enabled: 0
+    ObstacleLayers:
+      serializedVersion: 2
+      m_Bits: 256
+    UseFollowTarget:
+      Enabled: 0
+      YOffset: 5
+    Damping: 0.5
+    SmoothingTime: 0
+  TerrainResolution:
+    Enabled: 1
+    TerrainLayers:
+      serializedVersion: 2
+      m_Bits: 256
+    MaximumRaycast: 5
+    Damping: 0.5
 --- !u!1 &1634347349
 GameObject:
   m_ObjectHideFlags: 0
