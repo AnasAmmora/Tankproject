@@ -1,7 +1,8 @@
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class TankShooter : MonoBehaviour
+public class TankShooter : NetworkBehaviour
 {
     [Header("Input")]
     [SerializeField] private InputActionReference fireAction;
@@ -24,33 +25,21 @@ public class TankShooter : MonoBehaviour
     [Header("Muzzle Effect")]
     [SerializeField] private GameObject muzzleFlashPrefab;
 
-    [Header("Pooling")]
-    [SerializeField] private int bulletPoolPrewarm = 15;
-    [SerializeField] private int muzzleEffectPoolPrewarm = 5;
+    [SerializeField] private float muzzleFlashDestroyTime = 1.5f;
 
     private Collider[] ownerColliders;
     private TankCameraShake ownerShake;
     private float nextFireTime;
 
-    private void Awake()
+    public override void OnNetworkSpawn()
     {
+        if (!IsOwner) return;
+
         ownerColliders = GetComponentsInChildren<Collider>();
         ownerShake = GetComponent<TankCameraShake>();
 
-        if (aimCamera == null) aimCamera = Camera.main; 
+        if (aimCamera == null) aimCamera = Camera.main;
 
-        if (bulletPrefab != null)
-        {
-            PoolManager.Prewarm(bulletPrefab, bulletPoolPrewarm);
-
-            Bullet bulletTemplate = bulletPrefab.GetComponent<Bullet>();
-            if (bulletTemplate != null && bulletTemplate.ImpactEffectPrefab != null)
-            {
-                PoolManager.Prewarm(bulletTemplate.ImpactEffectPrefab, bulletPoolPrewarm);
-            }
-        }
-
-        if (muzzleFlashPrefab != null) PoolManager.Prewarm(muzzleFlashPrefab, muzzleEffectPoolPrewarm);
     }
 
     private void OnEnable()
@@ -73,29 +62,48 @@ public class TankShooter : MonoBehaviour
 
     private void OnFirePerformed(InputAction.CallbackContext context)
     {
+        if (!IsOwner) return;
         TryFire();
     }
 
     private void TryFire()
     {
         if (Time.time < nextFireTime) return;
-        if (bulletPrefab == null || muzzlePoint == null) return;
-
         nextFireTime = Time.time + fireCooldown;
 
         Vector3 direction = GetAimDirection();
-        Quaternion bulletRotation = Quaternion.LookRotation(direction);
 
-        GameObject bulletInstance = PoolManager.Get(bulletPrefab, muzzlePoint.position, bulletRotation);
-        bulletInstance.GetComponent<Bullet>().Launch(direction, ownerColliders, ownerShake);
-
-        if (muzzleFlashPrefab != null)
-        {
-            PoolManager.Get(muzzleFlashPrefab, muzzlePoint.position, muzzlePoint.rotation);
-        }
+        FireServerRpc(muzzlePoint.position, direction);
 
         ownerShake?.ShakeOnFire();
     }
+
+    [ServerRpc]
+    private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir)
+    {
+        Quaternion bulletRotation = Quaternion.LookRotation(aimDir);
+        GameObject bulletInstance = Instantiate(bulletPrefab, spawnPos, bulletRotation);
+
+        bulletInstance.GetComponent<NetworkObject>().Spawn();
+
+        if (bulletInstance.TryGetComponent<Bullet>(out Bullet bullet))
+        {
+            bullet.Launch(aimDir, ownerColliders, ownerShake);
+        }
+
+        PlayEffectsClientRpc(spawnPos);
+    }
+
+    [ClientRpc]
+    private void PlayEffectsClientRpc(Vector3 spawnPos)
+    {
+        if (muzzleFlashPrefab != null)
+        {
+            GameObject effect = Instantiate(muzzleFlashPrefab, spawnPos, muzzlePoint.rotation);
+            Destroy(effect, muzzleFlashDestroyTime);
+        }
+    }
+
     private Vector3 GetAimDirection()
     {
         if (aimCamera == null) return muzzlePoint.forward;

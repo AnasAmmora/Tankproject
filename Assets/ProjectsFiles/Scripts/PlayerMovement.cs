@@ -1,8 +1,9 @@
+using Unity.Netcode;
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(TankInputHandler))]
-public class PlayerMovement : MonoBehaviour
+public class PlayerMovement : NetworkBehaviour
 {
     [Header("Movement Settings")]
     public float moveSpeed = 10f;      
@@ -19,6 +20,8 @@ public class PlayerMovement : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (!IsOwner) return;
+
         MoveTank();
         RotateTank();
     }
@@ -39,5 +42,13 @@ public class PlayerMovement : MonoBehaviour
         Quaternion turnRotation = Quaternion.Euler(0f, turnAmount, 0f);
 
         rb.MoveRotation(rb.rotation * turnRotation);
+    }
+    [ClientRpc]
+    public void ApplyImpactClientRpc(Vector3 force)
+    {
+        if (IsOwner && rb != null)
+        {
+            rb.AddForce(force, ForceMode.Impulse);
+        }
     }
 }

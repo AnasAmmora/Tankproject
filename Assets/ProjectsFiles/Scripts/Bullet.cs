@@ -1,39 +1,40 @@
+using Unity.Netcode;
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(Collider))]
-public class Bullet : MonoBehaviour
+public class Bullet : NetworkBehaviour
 {
     [Header("Projectile Settings")]
     [SerializeField] private float speed = 40f;
-
     [SerializeField] private float maxLifetime = 5f;
 
-    [Header("Impact")]
+    [Header("Impact Settings")]
+    [SerializeField] private float impactForce = 5000f;
+
     [SerializeField] private GameObject impactEffectPrefab;
+    [SerializeField] private float effectDestroyTime = 2f;
 
     public GameObject ImpactEffectPrefab => impactEffectPrefab;
 
     private Rigidbody rb;
     private Collider col;
-    private Collider[] ignoredOwnerColliders;
     private TankCameraShake ownerShake;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         col = GetComponent<Collider>();
-        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic; 
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
     }
 
     public void Launch(Vector3 direction, Collider[] ownerColliders, TankCameraShake shake)
     {
         ownerShake = shake;
-        ignoredOwnerColliders = ownerColliders;
 
-        if (ignoredOwnerColliders != null)
+        if (ownerColliders != null)
         {
-            foreach (Collider ownerCol in ignoredOwnerColliders)
+            foreach (Collider ownerCol in ownerColliders)
             {
                 if (ownerCol != null) Physics.IgnoreCollision(col, ownerCol, true);
             }
@@ -42,41 +43,49 @@ public class Bullet : MonoBehaviour
         rb.linearVelocity = direction.normalized * speed;
         rb.angularVelocity = Vector3.zero;
 
-        CancelInvoke(nameof(ReturnToPool));
-        Invoke(nameof(ReturnToPool), maxLifetime);
+        if (IsServer)
+        {
+            Invoke(nameof(DestroyBullet), maxLifetime);
+        }
     }
 
     private void OnCollisionEnter(Collision collision)
     {
+        if (!IsServer) return;
+
         ContactPoint contact = collision.GetContact(0);
-        SpawnImpactEffect(contact.point, contact.normal);
         ownerShake?.ShakeOnHit();
-        ReturnToPool();
-    }
 
-    private void SpawnImpactEffect(Vector3 position, Vector3 normal)
-    {
-        if (impactEffectPrefab == null) return;
-        PoolManager.Get(impactEffectPrefab, position, Quaternion.LookRotation(normal));
-    }
-
-    private void ReturnToPool()
-    {
-        CancelInvoke(nameof(ReturnToPool));
-
-        if (ignoredOwnerColliders != null)
+        PlayerMovement hitTank = collision.gameObject.GetComponentInParent<PlayerMovement>();
+        if (hitTank != null)
         {
-            foreach (Collider ownerCol in ignoredOwnerColliders)
-            {
-                if (ownerCol != null) Physics.IgnoreCollision(col, ownerCol, false);
-            }
+            Vector3 pushForce = rb.linearVelocity.normalized * impactForce;
+
+            hitTank.ApplyImpactClientRpc(pushForce);
         }
 
-        ignoredOwnerColliders = null;
-        ownerShake = null;
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
+        TriggerImpactClientRpc(contact.point, contact.normal);
 
-        PoolManager.Release(gameObject);
+        DestroyBullet();
+    }
+
+    [ClientRpc]
+    private void TriggerImpactClientRpc(Vector3 position, Vector3 normal)
+    {
+        if (impactEffectPrefab != null)
+        {
+            GameObject effect = Instantiate(impactEffectPrefab, position, Quaternion.LookRotation(normal));
+            Destroy(effect, effectDestroyTime);
+        }
+    }
+
+    private void DestroyBullet()
+    {
+        CancelInvoke(nameof(DestroyBullet));
+
+        if (NetworkObject != null && NetworkObject.IsSpawned)
+        {
+            NetworkObject.Despawn();
+        }
     }
 }
