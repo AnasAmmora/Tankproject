@@ -9,6 +9,9 @@ public class Bullet : NetworkBehaviour
     [SerializeField] private float speed = 40f;
     [SerializeField] private float maxLifetime = 5f;
 
+    [Header("Arc / Trajectory")]
+    [SerializeField] private float launchUpwardForce = 6f;
+
     [Header("Impact Settings")]
     [SerializeField] private float impactForce = 5000f;
 
@@ -26,6 +29,7 @@ public class Bullet : NetworkBehaviour
         rb = GetComponent<Rigidbody>();
         col = GetComponent<Collider>();
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        rb.useGravity = true; 
     }
 
     public void Launch(Vector3 direction, Collider[] ownerColliders, TankCameraShake shake)
@@ -40,7 +44,8 @@ public class Bullet : NetworkBehaviour
             }
         }
 
-        rb.linearVelocity = direction.normalized * speed;
+        Vector3 velocity = direction.normalized * speed + Vector3.up * launchUpwardForce;
+        rb.linearVelocity = velocity;
         rb.angularVelocity = Vector3.zero;
 
         if (IsServer)

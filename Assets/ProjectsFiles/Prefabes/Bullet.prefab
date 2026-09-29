@@ -155,7 +155,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1706981812
+  GlobalObjectIdHash: 55294377
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -183,8 +183,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Bullet
   ShowTopMostFoldoutHeaderGroup: 1
-  speed: 40
+  speed: 50
   maxLifetime: 5
+  launchUpwardForce: 1.5
   impactForce: 0
   impactEffectPrefab: {fileID: 1121192042590650, guid: e1b08032bec16ba4eb1ae23cbd572664, type: 3}
   effectDestroyTime: 2
