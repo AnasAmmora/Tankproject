@@ -37,6 +37,29 @@ public class PlayerIdentityManager : MonoBehaviour
 
         UpdateStatus("");
     }
+//    private void Start()
+//    {
+//#if UNITY_EDITOR
+//        // 🟢 الحل هنا للاختبار: توليد اسم مختلف لكل نافذة في المحرر لتجنب تضارب الـ Profile
+//        int randomId = UnityEngine.Random.Range(1000, 9999);
+//        nameInputField.text = "Player_" + randomId;
+//#else
+//        // قراءة الاسم المحفوظ للاعبين الحقيقيين عند تصدير اللعبة
+//        if (PlayerPrefs.HasKey(PLAYER_NAME_KEY))
+//        {
+//            string savedName = PlayerPrefs.GetString(PLAYER_NAME_KEY);
+//            nameInputField.text = savedName;
+//        }
+//#endif
+
+//        // ربط زر ابدأ اللعب
+//        if (startGameButton != null)
+//        {
+//            startGameButton.onClick.AddListener(OnStartGameClicked);
+//        }
+
+//        UpdateStatus("");
+//    }
 
     private async void OnStartGameClicked()
     {
@@ -102,6 +125,39 @@ public class PlayerIdentityManager : MonoBehaviour
             return false;
         }
     }
+    //private async Task<bool> InitializeAndSignInAsync()
+    //{
+    //    try
+    //    {
+    //        // 🟢 الحل هنا: إنشاء خيارات تهيئة بـ Profile مستقل لكل نافذة
+    //        // سنستخدم LocalPlayerName (والذي يكون عشوائياً في المحرر) لضمان عدم حدوث تضارب
+    //        InitializationOptions options = new InitializationOptions();
+    //        options.SetProfile(LocalPlayerName);
+
+    //        // تهيئة خدمات Unity باستخدام هذه الخيارات
+    //        if (UnityServices.State == ServicesInitializationState.Uninitialized)
+    //        {
+    //            await UnityServices.InitializeAsync(options);
+    //        }
+
+    //        // تسجيل الدخول كـ Anonymous إذا لم نكن مسجلين مسبقاً
+    //        if (!AuthenticationService.Instance.IsSignedIn)
+    //        {
+    //            await AuthenticationService.Instance.SignInAnonymouslyAsync();
+
+    //            // تعيين اسم اللاعب في خدمة Unity لكي يراه الآخرون
+    //            await AuthenticationService.Instance.UpdatePlayerNameAsync(LocalPlayerName);
+    //        }
+
+    //        Debug.Log($"[Auth Success] Profile: {LocalPlayerName} | Player ID: {AuthenticationService.Instance.PlayerId}");
+    //        return true;
+    //    }
+    //    catch (Exception e)
+    //    {
+    //        Debug.LogError($"[Auth Error] Failed to sign in: {e.Message}");
+    //        return false;
+    //    }
+    //}
 
     private void OpenRoomBrowser()
     {
