@@ -18,6 +18,6 @@ The match revolves around a 2v2 team combat system with a primary objective. Eac
 
 ##  Tech Stack
 * **Engine:** Unity 6
-* **Networking:** [To be determined, e.g., Unity Netcode for GameObjects (NGO) or Photon Fusion]
-* **Target Platform:** PC / WebGL [Update based on preference]
+* **Networking:** [To be determined, e.g., Unity Netcode for GameObjects (NGO)]
+* **Target Platform:** PC / WebGL 
 
