@@ -18,13 +18,6 @@ The match revolves around a 2v2 team combat system with a primary objective. Eac
 
 ##  Tech Stack
 * **Engine:** Unity 6
-* **Networking:** [To be determined, e.g., Unity Netcode for GameObjects (NGO) or Photon Fusion]
-* **Target Platform:** PC / WebGL [Update based on preference]
+* **Networking:** [To be determined, e.g., Unity Netcode for GameObjects (NGO)]
+* **Target Platform:** PC / WebGL 
 
-##  Development Roadmap
-- [ ] Implement core tank movement and turret aiming.
-- [ ] Set up shooting mechanics and projectile physics.
-- [ ] Integrate online multiplayer networking to sync 4 players.
-- [ ] Develop the Health System for both players and bases.
-- [ ] Program the conditional respawn logic tied to base status.
-- [ ] Design the UI (Health bars, respawn timers, win/loss screens).
