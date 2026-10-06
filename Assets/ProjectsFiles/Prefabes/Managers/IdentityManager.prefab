@@ -1,0 +1,75 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4917985310408618580
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1285576101913344931}
+  - component: {fileID: 238662636321572936}
+  - component: {fileID: 1162753324224268280}
+  m_Layer: 0
+  m_Name: IdentityManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1285576101913344931
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4917985310408618580}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.7843, y: 14.15463, z: -14.31939}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &238662636321572936
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4917985310408618580}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 545f04e11273e86479ec7a5a96066713, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerIdentityManager
+  nameInputField: {fileID: 0}
+  startGameButton: {fileID: 0}
+  statusText: {fileID: 0}
+  loginPanel: {fileID: 0}
+  roomBrowserPanel: {fileID: 0}
+--- !u!114 &1162753324224268280
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4917985310408618580}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 224d6fc3fd6a5b040aa3356c0693a673, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LobbyManager
+  roomBrowserPanel: {fileID: 0}
+  maxPlayersDropdown: {fileID: 0}
+  createRoomButton: {fileID: 0}
+  refreshButton: {fileID: 0}
+  roomListContainer: {fileID: 0}
+  roomItemPrefab: {fileID: 3653664561800310037, guid: 444b7a2479002864aa78144b9771d14b, type: 3}
+  waitingRoomPanel: {fileID: 0}
+  playersListText: {fileID: 0}
+  readyButton: {fileID: 0}
+  startGameButton: {fileID: 0}
+  gameSceneName: GameScene

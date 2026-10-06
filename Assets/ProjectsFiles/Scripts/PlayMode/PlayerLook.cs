@@ -53,13 +53,7 @@ public class PlayerLook : NetworkBehaviour
             return;
         }
 
-        CinemachineCamera vCam = FindAnyObjectByType<CinemachineCamera>();
-
-        if (vCam != null && cameraTarget != null)
-        {
-            vCam.Follow = cameraTarget;
-            vCam.LookAt = cameraTarget;
-        }
+        StartCoroutine(SetupCameraRoutine());
 
         inputHandler = GetComponent<TankInputHandler>();
         Cursor.lockState = CursorLockMode.Locked;
@@ -76,7 +70,25 @@ public class PlayerLook : NetworkBehaviour
         {
             headInitialRotation = tankHead.rotation;
             referenceYaw = transform.eulerAngles.y;
-            netTurretYaw.Value = referenceYaw; 
+            netTurretYaw.Value = referenceYaw;
+        }
+    }
+
+    private System.Collections.IEnumerator SetupCameraRoutine()
+    {
+        CinemachineCamera vCam = null;
+
+        while (vCam == null)
+        {
+            vCam = FindAnyObjectByType<CinemachineCamera>();
+            yield return null;
+        }
+
+        if (cameraTarget != null)
+        {
+            vCam.Follow = cameraTarget;
+            vCam.LookAt = cameraTarget;
+            vCam.PreviousStateIsValid = false;
         }
     }
 
