@@ -25,6 +25,7 @@ public class LobbyManager : MonoBehaviour
     [SerializeField] private TMP_Text playersListText;
     [SerializeField] private Button readyButton;
     [SerializeField] private Button startGameButton;
+    [SerializeField] private Button leaveRoomButton; 
 
     [Header("Scene Settings")]
     [SerializeField] private string gameSceneName = "GameScene";
@@ -41,6 +42,7 @@ public class LobbyManager : MonoBehaviour
         refreshButton.onClick.AddListener(RefreshLobbyList);
         readyButton.onClick.AddListener(ToggleReady);
         startGameButton.onClick.AddListener(StartGame);
+        leaveRoomButton.onClick.AddListener(LeaveLobby); 
 
         waitingRoomPanel.SetActive(false);
     }
@@ -51,14 +53,11 @@ public class LobbyManager : MonoBehaviour
         HandleLobbyPolling();
     }
 
-    // 1. Send lobby heartbeat
     private async void HandleLobbyHeartbeat()
     {
-        if (currentLobby != null &&
-            currentLobby.HostId == AuthenticationService.Instance.PlayerId)
+        if (currentLobby != null && currentLobby.HostId == AuthenticationService.Instance.PlayerId)
         {
             heartbeatTimer -= Time.deltaTime;
-
             if (heartbeatTimer < 0f)
             {
                 heartbeatTimer = 15f;
@@ -67,51 +66,43 @@ public class LobbyManager : MonoBehaviour
         }
     }
 
-    // 2. Periodically update lobby data
     private async void HandleLobbyPolling()
     {
         if (currentLobby != null && !hasJoinedRelay)
         {
             pollTimer -= Time.deltaTime;
-
             if (pollTimer < 0f)
             {
                 pollTimer = 1.5f;
-
-                currentLobby = await LobbyService.Instance.GetLobbyAsync(currentLobby.Id);
-
-                UpdateWaitingRoomUI();
-                CheckIfGameStarted();
+                try
+                {
+                    currentLobby = await LobbyService.Instance.GetLobbyAsync(currentLobby.Id);
+                    UpdateWaitingRoomUI();
+                    CheckIfGameStarted();
+                }
+                catch (LobbyServiceException e)
+                {
+                    if (e.Reason == LobbyExceptionReason.LobbyNotFound)
+                    {
+                        ResetLobbyUI();
+                    }
+                }
             }
         }
     }
 
-    // 3. Prepare player data
     private Player GetPlayer()
     {
         return new Player
         {
             Data = new Dictionary<string, PlayerDataObject>
             {
-                {
-                    "PlayerName",
-                    new PlayerDataObject(
-                        PlayerDataObject.VisibilityOptions.Member,
-                        PlayerIdentityManager.LocalPlayerName
-                    )
-                },
-                {
-                    "IsReady",
-                    new PlayerDataObject(
-                        PlayerDataObject.VisibilityOptions.Member,
-                        "False"
-                    )
-                }
+                { "PlayerName", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, PlayerIdentityManager.LocalPlayerName) },
+                { "IsReady", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "False") }
             }
         };
     }
 
-    // Create a new lobby
     private async void CreateRoom()
     {
         string lobbyName = PlayerIdentityManager.LocalPlayerName + "'s Room";
@@ -123,50 +114,23 @@ public class LobbyManager : MonoBehaviour
             Player = GetPlayer(),
             Data = new Dictionary<string, DataObject>
             {
-                {
-                    "HostName",
-                    new DataObject(
-                        DataObject.VisibilityOptions.Public,
-                        PlayerIdentityManager.LocalPlayerName
-                    )
-                },
-                {
-                    "RelayCode",
-                    new DataObject(
-                        DataObject.VisibilityOptions.Member,
-                        "0"
-                    )
-                }
+                { "HostName", new DataObject(DataObject.VisibilityOptions.Public, PlayerIdentityManager.LocalPlayerName) },
+                { "RelayCode", new DataObject(DataObject.VisibilityOptions.Member, "0") }
             }
         };
 
-        currentLobby = await LobbyService.Instance.CreateLobbyAsync(
-            lobbyName,
-            maxPlayers,
-            options
-        );
-
+        currentLobby = await LobbyService.Instance.CreateLobbyAsync(lobbyName, maxPlayers, options);
         ShowWaitingRoom();
     }
 
-    // Join an existing lobby
     public async void JoinLobby(Lobby lobby)
     {
-        JoinLobbyByIdOptions options = new JoinLobbyByIdOptions
-        {
-            Player = GetPlayer()
-        };
-
-        currentLobby = await LobbyService.Instance.JoinLobbyByIdAsync(
-            lobby.Id,
-            options
-        );
-
+        JoinLobbyByIdOptions options = new JoinLobbyByIdOptions { Player = GetPlayer() };
+        currentLobby = await LobbyService.Instance.JoinLobbyByIdAsync(lobby.Id, options);
         ShowWaitingRoom();
     }
 
-    // Refresh the list of available lobbies
-    private async void RefreshLobbyList()
+    public async void RefreshLobbyList()
     {
         try
         {
@@ -175,37 +139,21 @@ public class LobbyManager : MonoBehaviour
                 Count = 25,
                 Filters = new List<QueryFilter>
                 {
-                    new QueryFilter(
-                        QueryFilter.FieldOptions.AvailableSlots,
-                        "0",
-                        QueryFilter.OpOptions.GT
-                    )
+                    new QueryFilter(QueryFilter.FieldOptions.AvailableSlots, "0", QueryFilter.OpOptions.GT)
                 },
-                Order = new List<QueryOrder>
-                {
-                    new QueryOrder(
-                        false,
-                        QueryOrder.FieldOptions.Created
-                    )
-                }
+                Order = new List<QueryOrder> { new QueryOrder(false, QueryOrder.FieldOptions.Created) }
             };
 
             QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
 
-            // Clear the current lobby list
             foreach (Transform child in roomListContainer)
             {
                 Destroy(child.gameObject);
             }
 
-            // Create UI items for each available lobby
             foreach (Lobby lobby in response.Results)
             {
-                GameObject roomItem = Instantiate(
-                    roomItemPrefab,
-                    roomListContainer
-                );
-
+                GameObject roomItem = Instantiate(roomItemPrefab, roomListContainer);
                 roomItem.GetComponent<RoomItemUI>().Initialize(lobby, this);
             }
         }
@@ -215,33 +163,19 @@ public class LobbyManager : MonoBehaviour
         }
     }
 
-    // 4. Toggle player ready status
     private async void ToggleReady()
     {
         isReady = !isReady;
-
         UpdatePlayerOptions options = new UpdatePlayerOptions
         {
             Data = new Dictionary<string, PlayerDataObject>
             {
-                {
-                    "IsReady",
-                    new PlayerDataObject(
-                        PlayerDataObject.VisibilityOptions.Member,
-                        isReady ? "True" : "False"
-                    )
-                }
+                { "IsReady", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, isReady ? "True" : "False") }
             }
         };
-
-        currentLobby = await LobbyService.Instance.UpdatePlayerAsync(
-            currentLobby.Id,
-            AuthenticationService.Instance.PlayerId,
-            options
-        );
+        currentLobby = await LobbyService.Instance.UpdatePlayerAsync(currentLobby.Id, AuthenticationService.Instance.PlayerId, options);
     }
 
-    // 5. Update player names and ready statuses
     private void UpdateWaitingRoomUI()
     {
         string playersText = "";
@@ -249,36 +183,19 @@ public class LobbyManager : MonoBehaviour
 
         foreach (Player p in currentLobby.Players)
         {
-            bool playerIsReady =
-                p.Data != null &&
-                p.Data.ContainsKey("IsReady") &&
-                p.Data["IsReady"].Value == "True";
+            bool playerIsReady = p.Data != null && p.Data.ContainsKey("IsReady") && p.Data["IsReady"].Value == "True";
+            string pName = p.Data != null && p.Data.ContainsKey("PlayerName") ? p.Data["PlayerName"].Value : "Unknown";
 
-            string pName =
-                p.Data != null && p.Data.ContainsKey("PlayerName")
-                    ? p.Data["PlayerName"].Value
-                    : "Unknown";
-
-            playersText += pName +
-                (playerIsReady
-                    ? " <color=green>[Ready]</color>\n"
-                    : " <color=red>[Not Ready]</color>\n");
-
-            if (!playerIsReady)
-            {
-                allReady = false;
-            }
+            playersText += pName + (playerIsReady ? " <color=green>[Ready]</color>\n" : " <color=red>[Not Ready]</color>\n");
+            if (!playerIsReady) allReady = false;
         }
 
         playersListText.text = playersText;
 
-        // Only the host can start the game
         if (currentLobby.HostId == AuthenticationService.Instance.PlayerId)
         {
             startGameButton.gameObject.SetActive(true);
-
-            startGameButton.interactable =
-                allReady && currentLobby.Players.Count > 1;
+            startGameButton.interactable = allReady && currentLobby.Players.Count > 1;
         }
         else
         {
@@ -286,111 +203,105 @@ public class LobbyManager : MonoBehaviour
         }
     }
 
-    // Switch to the waiting room
     private void ShowWaitingRoom()
     {
         roomBrowserPanel.SetActive(false);
         waitingRoomPanel.SetActive(true);
     }
 
-    // 6. Host starts the game using Relay
-    private async void StartGame()
+    private async void LeaveLobby()
     {
-        startGameButton.interactable = false;
+        if (currentLobby == null) return;
 
         try
         {
-            Allocation allocation =
-                await RelayService.Instance.CreateAllocationAsync(
-                    currentLobby.MaxPlayers - 1
-                );
+            if (currentLobby.HostId == AuthenticationService.Instance.PlayerId)
+            {
+                await LobbyService.Instance.DeleteLobbyAsync(currentLobby.Id);
+            }
+            else
+            {
+                await LobbyService.Instance.RemovePlayerAsync(currentLobby.Id, AuthenticationService.Instance.PlayerId);
+            }
+        }
+        catch (LobbyServiceException e)
+        {
+            Debug.LogWarning($"{e.Message}");
+        }
 
-            string relayJoinCode =
-                await RelayService.Instance.GetJoinCodeAsync(
-                    allocation.AllocationId
-                );
+        ResetLobbyUI();
+    }
 
-            // Store the Relay join code in the lobby
+    private void ResetLobbyUI()
+    {
+        currentLobby = null;
+        isReady = false;
+        hasJoinedRelay = false;
+        waitingRoomPanel.SetActive(false);
+        roomBrowserPanel.SetActive(true);
+        RefreshLobbyList();
+    }
+
+ 
+    private void OnDestroy()
+    {
+        if (currentLobby != null && !hasJoinedRelay)
+        {
+            if (currentLobby.HostId == AuthenticationService.Instance.PlayerId)
+                LobbyService.Instance.DeleteLobbyAsync(currentLobby.Id);
+            else
+                LobbyService.Instance.RemovePlayerAsync(currentLobby.Id, AuthenticationService.Instance.PlayerId);
+        }
+    }
+
+    private async void StartGame()
+    {
+        startGameButton.interactable = false;
+        try
+        {
+            hasJoinedRelay = true;
+            Allocation allocation = await RelayService.Instance.CreateAllocationAsync(currentLobby.MaxPlayers - 1);
+            string relayJoinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
+
             UpdateLobbyOptions options = new UpdateLobbyOptions
             {
-                Data = new Dictionary<string, DataObject>
-                {
-                    {
-                        "RelayCode",
-                        new DataObject(
-                            DataObject.VisibilityOptions.Member,
-                            relayJoinCode
-                        )
-                    }
-                }
+                Data = new Dictionary<string, DataObject> { { "RelayCode", new DataObject(DataObject.VisibilityOptions.Member, relayJoinCode) } }
             };
+            currentLobby = await LobbyService.Instance.UpdateLobbyAsync(currentLobby.Id, options);
 
-            currentLobby = await LobbyService.Instance.UpdateLobbyAsync(
-                currentLobby.Id,
-                options
+            NetworkManager.Singleton.GetComponent<UnityTransport>().SetHostRelayData(
+                allocation.RelayServer.IpV4, (ushort)allocation.RelayServer.Port,
+                allocation.AllocationIdBytes, allocation.Key, allocation.ConnectionData
             );
 
-            // Configure the host connection through Relay
-            NetworkManager.Singleton
-                .GetComponent<UnityTransport>()
-                .SetHostRelayData(
-                    allocation.RelayServer.IpV4,
-                    (ushort)allocation.RelayServer.Port,
-                    allocation.AllocationIdBytes,
-                    allocation.Key,
-                    allocation.ConnectionData
-                );
-
-            // Start the host
             NetworkManager.Singleton.StartHost();
-
-            hasJoinedRelay = true;
-
-            // Load the game scene for all connected clients
-            NetworkManager.Singleton.SceneManager.LoadScene(
-                gameSceneName,
-                UnityEngine.SceneManagement.LoadSceneMode.Single
-            );
+            NetworkManager.Singleton.SceneManager.LoadScene(gameSceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
         }
         catch (System.Exception e)
         {
             Debug.LogError("Error starting game: " + e.Message);
             startGameButton.interactable = true;
+            hasJoinedRelay = false;
         }
     }
 
-    // 7. Clients check whether the host has started the game
     private async void CheckIfGameStarted()
     {
-        if (currentLobby.Data != null &&
-            currentLobby.Data.ContainsKey("RelayCode"))
+        if (currentLobby.Data != null && currentLobby.Data.ContainsKey("RelayCode"))
         {
             string relayCode = currentLobby.Data["RelayCode"].Value;
-
             if (relayCode != "0" && !hasJoinedRelay)
             {
                 hasJoinedRelay = true;
-
                 try
                 {
-                    JoinAllocation joinAllocation =
-                        await RelayService.Instance.JoinAllocationAsync(
-                            relayCode
-                        );
+                    JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(relayCode);
+                    NetworkManager.Singleton.GetComponent<UnityTransport>().SetClientRelayData(
+                        joinAllocation.RelayServer.IpV4, (ushort)joinAllocation.RelayServer.Port,
+                        joinAllocation.AllocationIdBytes, joinAllocation.Key,
+                        joinAllocation.ConnectionData, joinAllocation.HostConnectionData
+                    );
 
-                    // Configure the client connection through Relay
-                    NetworkManager.Singleton
-                        .GetComponent<UnityTransport>()
-                        .SetClientRelayData(
-                            joinAllocation.RelayServer.IpV4,
-                            (ushort)joinAllocation.RelayServer.Port,
-                            joinAllocation.AllocationIdBytes,
-                            joinAllocation.Key,
-                            joinAllocation.ConnectionData,
-                            joinAllocation.HostConnectionData
-                        );
-
-                    // Start the client
                     NetworkManager.Singleton.StartClient();
                 }
                 catch (System.Exception e)

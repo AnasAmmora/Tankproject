@@ -5,6 +5,7 @@ using Unity.Services.Authentication;
 using Unity.Services.Core;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Text.RegularExpressions;
 
 public class PlayerIdentityManager : MonoBehaviour
 {
@@ -17,19 +18,20 @@ public class PlayerIdentityManager : MonoBehaviour
     [SerializeField] private GameObject loginPanel;
     [SerializeField] private GameObject roomBrowserPanel;
 
+    [Header("Scripts References")]
+    [SerializeField] private LobbyManager lobbyManager; 
+
     private const string PLAYER_NAME_KEY = "SavedPlayerName";
     public static string LocalPlayerName { get; private set; }
 
     private void Start()
     {
-        // 1. Load the saved name if it exists
         if (PlayerPrefs.HasKey(PLAYER_NAME_KEY))
         {
             string savedName = PlayerPrefs.GetString(PLAYER_NAME_KEY);
             nameInputField.text = savedName;
         }
 
-        // 2. Register the Start Game button listener
         if (startGameButton != null)
         {
             startGameButton.onClick.AddListener(OnStartGameClicked);
@@ -37,29 +39,6 @@ public class PlayerIdentityManager : MonoBehaviour
 
         UpdateStatus("");
     }
-//    private void Start()
-//    {
-//#if UNITY_EDITOR
-//        // 🟢 الحل هنا للاختبار: توليد اسم مختلف لكل نافذة في المحرر لتجنب تضارب الـ Profile
-//        int randomId = UnityEngine.Random.Range(1000, 9999);
-//        nameInputField.text = "Player_" + randomId;
-//#else
-//        // قراءة الاسم المحفوظ للاعبين الحقيقيين عند تصدير اللعبة
-//        if (PlayerPrefs.HasKey(PLAYER_NAME_KEY))
-//        {
-//            string savedName = PlayerPrefs.GetString(PLAYER_NAME_KEY);
-//            nameInputField.text = savedName;
-//        }
-//#endif
-
-//        // ربط زر ابدأ اللعب
-//        if (startGameButton != null)
-//        {
-//            startGameButton.onClick.AddListener(OnStartGameClicked);
-//        }
-
-//        UpdateStatus("");
-//    }
 
     private async void OnStartGameClicked()
     {
@@ -71,23 +50,18 @@ public class PlayerIdentityManager : MonoBehaviour
             return;
         }
 
-        // Disable the button to prevent multiple clicks
         startGameButton.interactable = false;
         UpdateStatus("Connecting to Unity services...");
 
-        // Save the name locally
         PlayerPrefs.SetString(PLAYER_NAME_KEY, inputName);
         PlayerPrefs.Save();
         LocalPlayerName = inputName;
 
-        // Sign in to Unity Services
-        bool success = await InitializeAndSignInAsync();
+        bool success = await InitializeAndSignInAsync(inputName);
 
         if (success)
         {
             UpdateStatus("Successfully signed in!");
-
-            // Open the room browser panel (or load the next scene)
             OpenRoomBrowser();
         }
         else
@@ -97,26 +71,34 @@ public class PlayerIdentityManager : MonoBehaviour
         }
     }
 
-    private async Task<bool> InitializeAndSignInAsync()
+    private async Task<bool> InitializeAndSignInAsync(string rawName)
     {
         try
         {
-            // Initialize Unity Services
+            InitializationOptions options = new InitializationOptions();
+
+            string cleanProfileName = Regex.Replace(rawName, "[^a-zA-Z0-9_-]", "");
+            if (string.IsNullOrEmpty(cleanProfileName)) cleanProfileName = "Player";
+            if (cleanProfileName.Length > 20) cleanProfileName = cleanProfileName.Substring(0, 20);
+
+#if UNITY_EDITOR
+            cleanProfileName += "_" + UnityEngine.Random.Range(1000, 9999);
+#endif
+
+            options.SetProfile(cleanProfileName);
+
             if (UnityServices.State == ServicesInitializationState.Uninitialized)
             {
-                await UnityServices.InitializeAsync();
+                await UnityServices.InitializeAsync(options);
             }
 
-            // Sign in anonymously if we are not already signed in
             if (!AuthenticationService.Instance.IsSignedIn)
             {
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
-
-                // Set the player's name in Unity Authentication so other players can see it
                 await AuthenticationService.Instance.UpdatePlayerNameAsync(LocalPlayerName);
             }
 
-            Debug.Log($"[Auth Success] Player ID: {AuthenticationService.Instance.PlayerId}");
+            Debug.Log($"[Auth Success] Profile: {cleanProfileName} | Player ID: {AuthenticationService.Instance.PlayerId}");
             return true;
         }
         catch (Exception e)
@@ -125,48 +107,16 @@ public class PlayerIdentityManager : MonoBehaviour
             return false;
         }
     }
-    //private async Task<bool> InitializeAndSignInAsync()
-    //{
-    //    try
-    //    {
-    //        // 🟢 الحل هنا: إنشاء خيارات تهيئة بـ Profile مستقل لكل نافذة
-    //        // سنستخدم LocalPlayerName (والذي يكون عشوائياً في المحرر) لضمان عدم حدوث تضارب
-    //        InitializationOptions options = new InitializationOptions();
-    //        options.SetProfile(LocalPlayerName);
-
-    //        // تهيئة خدمات Unity باستخدام هذه الخيارات
-    //        if (UnityServices.State == ServicesInitializationState.Uninitialized)
-    //        {
-    //            await UnityServices.InitializeAsync(options);
-    //        }
-
-    //        // تسجيل الدخول كـ Anonymous إذا لم نكن مسجلين مسبقاً
-    //        if (!AuthenticationService.Instance.IsSignedIn)
-    //        {
-    //            await AuthenticationService.Instance.SignInAnonymouslyAsync();
-
-    //            // تعيين اسم اللاعب في خدمة Unity لكي يراه الآخرون
-    //            await AuthenticationService.Instance.UpdatePlayerNameAsync(LocalPlayerName);
-    //        }
-
-    //        Debug.Log($"[Auth Success] Profile: {LocalPlayerName} | Player ID: {AuthenticationService.Instance.PlayerId}");
-    //        return true;
-    //    }
-    //    catch (Exception e)
-    //    {
-    //        Debug.LogError($"[Auth Error] Failed to sign in: {e.Message}");
-    //        return false;
-    //    }
-    //}
 
     private void OpenRoomBrowser()
     {
-        // If you are using different panels in the same scene:
         if (loginPanel != null) loginPanel.SetActive(false);
         if (roomBrowserPanel != null) roomBrowserPanel.SetActive(true);
 
-        // Note: If you are using scenes:
-        // UnityEngine.SceneManagement.SceneManager.LoadScene("RoomBrowserScene");
+        if (lobbyManager != null)
+        {
+            lobbyManager.RefreshLobbyList();
+        }
     }
 
     private void UpdateStatus(string message)
@@ -177,4 +127,3 @@ public class PlayerIdentityManager : MonoBehaviour
         }
     }
 }
-
