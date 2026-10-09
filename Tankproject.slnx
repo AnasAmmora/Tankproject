@@ -1,8 +1,8 @@
 ﻿<Solution>
-  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.ProGrids.Editor.csproj" />
   <Project Path="Unity.ProGrids.Editor.Tests.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.ProGrids.csproj" />
   <Project Path="Unity.ProGrids.Runtime.Tests.csproj" />
 </Solution>

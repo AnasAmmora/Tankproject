@@ -3,18 +3,18 @@ using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(Collider))]
-public class Bullet : NetworkBehaviour
+public class Bullet : MonoBehaviour 
 {
     [Header("Projectile Settings")]
     [SerializeField] private float speed = 40f;
     [SerializeField] private float maxLifetime = 5f;
+    [SerializeField] private int damageAmount = 25;
 
     [Header("Arc / Trajectory")]
     [SerializeField] private float launchUpwardForce = 6f;
 
     [Header("Impact Settings")]
     [SerializeField] private float impactForce = 5000f;
-
     [SerializeField] private GameObject impactEffectPrefab;
     [SerializeField] private float effectDestroyTime = 2f;
 
@@ -23,18 +23,20 @@ public class Bullet : NetworkBehaviour
     private Rigidbody rb;
     private Collider col;
     private TankCameraShake ownerShake;
+    private int attackerTeam = -1;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         col = GetComponent<Collider>();
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        rb.useGravity = true; 
+        rb.useGravity = true;
     }
 
-    public void Launch(Vector3 direction, Collider[] ownerColliders, TankCameraShake shake)
+    public void Launch(Vector3 direction, Collider[] ownerColliders, TankCameraShake shake, int teamIndex)
     {
         ownerShake = shake;
+        attackerTeam = teamIndex;
 
         if (ownerColliders != null)
         {
@@ -48,49 +50,44 @@ public class Bullet : NetworkBehaviour
         rb.linearVelocity = velocity;
         rb.angularVelocity = Vector3.zero;
 
-        if (IsServer)
-        {
-            Invoke(nameof(DestroyBullet), maxLifetime);
-        }
+        Invoke(nameof(DestroyBullet), maxLifetime);
     }
 
     private void OnCollisionEnter(Collision collision)
     {
-        if (!IsServer) return;
-
         ContactPoint contact = collision.GetContact(0);
-        ownerShake?.ShakeOnHit();
 
-        PlayerMovement hitTank = collision.gameObject.GetComponentInParent<PlayerMovement>();
-        if (hitTank != null)
+        if (ownerShake != null) ownerShake.ShakeOnHit();
+
+
+        if (NetworkManager.Singleton.IsServer)
         {
-            Vector3 pushForce = rb.linearVelocity.normalized * impactForce;
+            PlayerHealth hitHealth = collision.gameObject.GetComponentInParent<PlayerHealth>();
+            if (hitHealth != null) hitHealth.TakeDamage(damageAmount, attackerTeam);
 
-            hitTank.ApplyImpactClientRpc(pushForce);
+            TeamBase hitBase = collision.gameObject.GetComponentInParent<TeamBase>();
+            if (hitBase != null) hitBase.TakeDamage(damageAmount, attackerTeam);
+
+            PlayerMovement hitTank = collision.gameObject.GetComponentInParent<PlayerMovement>();
+            if (hitTank != null)
+            {
+                Vector3 pushForce = rb.linearVelocity.normalized * impactForce;
+                hitTank.ApplyImpactClientRpc(pushForce);
+            }
         }
 
-        TriggerImpactClientRpc(contact.point, contact.normal);
-
-        DestroyBullet();
-    }
-
-    [ClientRpc]
-    private void TriggerImpactClientRpc(Vector3 position, Vector3 normal)
-    {
         if (impactEffectPrefab != null)
         {
-            GameObject effect = Instantiate(impactEffectPrefab, position, Quaternion.LookRotation(normal));
+            GameObject effect = Instantiate(impactEffectPrefab, contact.point, Quaternion.LookRotation(contact.normal));
             Destroy(effect, effectDestroyTime);
         }
+
+        DestroyBullet();
     }
 
     private void DestroyBullet()
     {
         CancelInvoke(nameof(DestroyBullet));
-
-        if (NetworkObject != null && NetworkObject.IsSpawned)
-        {
-            NetworkObject.Despawn();
-        }
+        Destroy(gameObject); 
     }
 }
