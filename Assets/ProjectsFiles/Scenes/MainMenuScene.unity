@@ -2065,7 +2065,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6440815157356466689, guid: d1df8dee73019f0449fca00b3a460514, type: 3}
       propertyPath: NetworkConfig.ConnectionApproval
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -5438,3 +5438,45 @@ SceneRoots:
   - {fileID: 1028007723}
   - {fileID: 1936509250}
   - {fileID: 787358372}
+  - {fileID: 900001002}
+--- !u!1 &900001001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 900001002}
+  - component: {fileID: 900001003}
+  m_Layer: 5
+  m_Name: LoadingScreenController
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &900001002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900001001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 0}
+--- !u!114 &900001003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900001001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eca8af821f9148a0aab9e7a71763f410, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::LoadingScreenController
+  backgroundSprite: {fileID: 21300000, guid: cf0f42b334bf1124d843ba35da4fd48e, type: 3}
+  loadingFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

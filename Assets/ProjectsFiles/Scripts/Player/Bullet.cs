@@ -52,6 +52,8 @@ public class Bullet : MonoBehaviour
         impactHandled = false;
         launched = true;
         col.enabled = true;
+        rb.position = transform.position;
+        rb.rotation = transform.rotation;
         rb.linearVelocity = direction.normalized * speed + Vector3.up * launchUpwardForce;
         rb.angularVelocity = Vector3.zero;
         Invoke(nameof(DestroyBullet), maxLifetime);
@@ -60,6 +62,11 @@ public class Bullet : MonoBehaviour
     private bool CanHit(Collider other)
     {
         if (other == col || other.isTrigger) return false;
+        PlayerHealth player = other.GetComponentInParent<PlayerHealth>();
+        if (player != null && (player.isDead.Value || player.NetworkObjectId == shooterId ||
+            player.GetComponent<PlayerState>().teamIndex.Value == attackerTeam)) return false;
+        TeamBase teamBase = other.GetComponentInParent<TeamBase>();
+        if (teamBase != null && (teamBase.isDestroyed.Value || teamBase.teamIndex == attackerTeam)) return false;
         if (ignoredColliders != null)
         {
             foreach (Collider ownerCollider in ignoredColliders)
@@ -71,6 +78,8 @@ public class Bullet : MonoBehaviour
     private void FixedUpdate()
     {
         if (!launched || impactHandled) return;
+        if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.Running))
+        { DestroyBullet(); return; }
         Vector3 velocity = rb.linearVelocity;
         // Sweep the actual collider so fast trigger projectiles do not tunnel.
         Vector3 displacement = velocity * Time.fixedDeltaTime
@@ -99,9 +108,17 @@ public class Bullet : MonoBehaviour
     private void HandleImpact(Collider other, Vector3 point, Vector3 normal, Vector3 velocity)
     {
         if (impactHandled) return;
+        MatchManager match = MatchManager.Instance;
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+        {
+            // The team is recovered from the server's retained shooter record,
+            // including when that shooter has died or disconnected since firing.
+            if (match == null || !match.TryGetShotTeam(shooterId, out attackerTeam)) { DestroyBullet(); return; }
+            if (!CanHit(other)) return;
+        }
         impactHandled = true;
         col.enabled = false;
-        ownerShake?.ShakeOnHit();
+        if (ownerShake != null) ownerShake.ShakeOnHit();
         PlayerMovement tank = other.GetComponentInParent<PlayerMovement>();
         TankShooter.TraceShot(diagnostics, shooterId, shotId,
             tank != null ? tank.NetworkObjectId : ulong.MaxValue, "projectile-contact");
@@ -109,10 +126,10 @@ public class Bullet : MonoBehaviour
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
         {
             PlayerHealth health = other.GetComponentInParent<PlayerHealth>();
-            if (health != null) health.TakeDamage(damageAmount, attackerTeam);
+            bool acceptedPlayerHit = health != null && health.TakeDamage(damageAmount, attackerTeam, shooterId);
             TeamBase teamBase = other.GetComponentInParent<TeamBase>();
             if (teamBase != null) teamBase.TakeDamage(damageAmount, attackerTeam);
-            if (tank != null) tank.ApplyHitImpulse(velocity.normalized * impactForce,
+            if (acceptedPlayerHit && !health.isDead.Value && tank != null) tank.ApplyHitImpulse(velocity.normalized * impactForce,
                 shooterId, shotId, diagnostics);
         }
 
@@ -131,6 +148,10 @@ public class Bullet : MonoBehaviour
         launched = false;
         ignoredColliders = null;
         ownerShake = null;
+        attackerTeam = -1;
+        shooterId = ulong.MaxValue;
+        shotId = 0;
+        diagnostics = false;
     }
 
     private void DestroyBullet()

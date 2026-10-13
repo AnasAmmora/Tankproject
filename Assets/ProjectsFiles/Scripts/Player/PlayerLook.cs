@@ -5,6 +5,7 @@ using UnityEngine;
 [RequireComponent(typeof(TankInputHandler))]
 public class PlayerLook : NetworkBehaviour
 {
+    public bool LocalCameraReady { get; private set; }
     [Header("References")]
     public Transform tankHead;
 
@@ -39,6 +40,7 @@ public class PlayerLook : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
+        LocalCameraReady = false;
         if (!IsOwner)
         {
             if (cameraTarget != null)
@@ -75,17 +77,26 @@ public class PlayerLook : NetworkBehaviour
             headInitialRotation = tankHead.rotation;
             referenceYaw = transform.eulerAngles.y;
             netTurretYaw.Value = referenceYaw;
+            localTurretYaw = referenceYaw;
         }
     }
 
     private System.Collections.IEnumerator SetupCameraRoutine()
     {
         CinemachineCamera vCam = null;
+        double deadline = Time.realtimeSinceStartupAsDouble + 30f;
 
-        while (vCam == null)
+        while (vCam == null && IsSpawned && Time.realtimeSinceStartupAsDouble < deadline)
         {
             vCam = FindAnyObjectByType<CinemachineCamera>();
             yield return null;
+        }
+        if (!IsSpawned) yield break;
+        if (vCam == null || cameraTarget == null || Camera.main == null)
+        {
+            if (MatchConnectionCoordinator.Instance != null && MatchConnectionCoordinator.Instance.TransitionActive)
+                MatchConnectionCoordinator.Instance.Fail("The local tank camera could not be prepared.");
+            yield break;
         }
 
         if (cameraTarget != null)
@@ -94,11 +105,14 @@ public class PlayerLook : NetworkBehaviour
             vCam.LookAt = cameraTarget;
             vCam.PreviousStateIsValid = false;
         }
+        // A frame also advances in headless builds, unlike WaitForEndOfFrame.
+        yield return null;
+        LocalCameraReady = IsSpawned && vCam != null && vCam.Follow == cameraTarget && vCam.LookAt == cameraTarget;
     }
 
     private void Update()
     {
-        if (IsOwner)
+        if (IsOwner && inputHandler != null && MatchManager.CanControl(GetComponent<PlayerHealth>()))
         {
             Vector2 mouseDelta = inputHandler.LookInput;
             RotateCameraTarget(mouseDelta);
@@ -106,6 +120,24 @@ public class PlayerLook : NetworkBehaviour
         }
 
         ApplyTurretRotation();
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        LocalCameraReady = false;
+        StopAllCoroutines();
+    }
+
+    public void ResetAfterReturn()
+    {
+        if (!IsOwner) return;
+        cameraYaw = transform.eulerAngles.y;
+        cameraPitch = 0f;
+        if (cameraTarget != null) cameraTarget.rotation = Quaternion.Euler(0f, cameraYaw, 0f);
+        localTurretYaw = cameraYaw;
+        netTurretYaw.Value = localTurretYaw;
+        LocalCameraReady = false;
+        StartCoroutine(SetupCameraRoutine());
     }
 
     private void RotateCameraTarget(Vector2 mouseDelta)

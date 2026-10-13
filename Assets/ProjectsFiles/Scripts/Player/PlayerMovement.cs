@@ -20,6 +20,8 @@ public class PlayerMovement : NetworkBehaviour
     private Rigidbody rb;
     private TankInputHandler inputHandler;
     private Vector3 pendingImpulse;
+    private RigidbodyConstraints drivingConstraints;
+    private bool preparationLocked;
     private readonly ConfirmedHitVisualPrediction visualPrediction = new ConfirmedHitVisualPrediction();
     private readonly HashSet<(ulong, uint)> receivedHits = new HashSet<(ulong, uint)>();
     private readonly Queue<(ulong, uint)> hitHistory = new Queue<(ulong, uint)>();
@@ -48,6 +50,7 @@ public class PlayerMovement : NetworkBehaviour
     {
         rb = GetComponent<Rigidbody>();
         inputHandler = GetComponent<TankInputHandler>();
+        drivingConstraints = rb.constraints;
         networkTransform = GetComponent<NetworkTransform>();
         // Refuse presentation targets containing colliders or network/physics bodies.
         if (visualModel != null && (visualModel == transform ||
@@ -68,6 +71,7 @@ public class PlayerMovement : NetworkBehaviour
         hitHistory.Clear();
         pendingHitTraces.Clear();
         ResetPresentation();
+        if (IsOwner) SetPreparationLock(!MatchManager.CanControl(GetComponent<PlayerHealth>()));
     }
 
     // The server confirms a hit; only the movement authority simulates its impulse.
@@ -91,7 +95,8 @@ public class PlayerMovement : NetworkBehaviour
     private void ConfirmHitRpc(Vector3 impulse, ulong shooterId, uint shotId,
         double confirmedAt, float visualLead, bool diagnostics)
     {
-        if (!IsSpawned || !receivedHits.Add((shooterId, shotId))) return;
+        if (!IsSpawned || !MatchManager.CanControl(GetComponent<PlayerHealth>()) ||
+            !receivedHits.Add((shooterId, shotId))) return;
         hitHistory.Enqueue((shooterId, shotId));
         if (hitHistory.Count > 128) receivedHits.Remove(hitHistory.Dequeue());
         HitTrace trace = new HitTrace { ShooterId = shooterId, ShotId = shotId,
@@ -120,6 +125,8 @@ public class PlayerMovement : NetworkBehaviour
     private void FixedUpdate()
     {
         if (!IsSpawned || !IsOwner || rb.isKinematic) return;
+        SetPreparationLock(!MatchManager.CanControl(GetComponent<PlayerHealth>()));
+        if (preparationLocked) return;
 
         // Accelerate toward drive speed without overwriting the hit velocity.
         // The motor brakes knockback gradually; gravity remains independent.
@@ -141,6 +148,18 @@ public class PlayerMovement : NetworkBehaviour
 
         float turnAmount = inputHandler.MoveInput.x * rotationSpeed * Time.fixedDeltaTime;
         rb.MoveRotation(rb.rotation * Quaternion.Euler(0f, turnAmount, 0f));
+    }
+
+    private void SetPreparationLock(bool locked)
+    {
+        if (preparationLocked == locked) return;
+        preparationLocked = locked;
+        rb.constraints = locked ? RigidbodyConstraints.FreezeAll : drivingConstraints;
+        if (locked)
+        {
+            rb.linearVelocity = rb.angularVelocity = Vector3.zero;
+            pendingImpulse = Vector3.zero;
+        }
     }
 
     private void LateUpdate()
@@ -214,8 +233,28 @@ public class PlayerMovement : NetworkBehaviour
         observedRootVelocity = Vector3.zero;
     }
 
+    public void ClearLifeMotion()
+    {
+        pendingImpulse = Vector3.zero;
+        pendingHitTraces.Clear();
+        awaitingAuthorityState = awaitingDisplayedMovement = false;
+        ResetPresentation();
+        if (IsOwner && !rb.isKinematic)
+            rb.linearVelocity = rb.angularVelocity = Vector3.zero;
+    }
+
+    public void RelocateForReturn(Vector3 position, Quaternion rotation)
+    {
+        if (!IsOwner || !IsSpawned) return;
+        ClearLifeMotion();
+        rb.position = position;
+        rb.rotation = rotation;
+        networkTransform.Teleport(position, rotation, transform.localScale);
+    }
+
     public override void OnNetworkDespawn()
     {
+        SetPreparationLock(false);
         ResetPresentation();
         pendingImpulse = Vector3.zero;
         pendingHitTraces.Clear();

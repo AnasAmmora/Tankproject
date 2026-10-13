@@ -31,6 +31,11 @@ public class TankInputHandler : NetworkBehaviour
     private void Update()
     {
         if (!IsOwner) return; 
+        if (!MatchManager.CanControl(GetComponent<PlayerHealth>()))
+        {
+            MoveInput = LookInput = Vector2.zero;
+            return;
+        }
 
         if (moveAction != null) MoveInput = moveAction.action.ReadValue<Vector2>();
         if (lookAction != null) LookInput = lookAction.action.ReadValue<Vector2>();

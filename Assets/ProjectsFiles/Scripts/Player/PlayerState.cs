@@ -3,6 +3,8 @@ using Unity.Collections;
 
 public class PlayerState : NetworkBehaviour
 {
+    public NetworkVariable<int> spawnOrdinal = new NetworkVariable<int>(-1);
+    public NetworkVariable<bool> isPrepared = new NetworkVariable<bool>(false);
     public NetworkVariable<FixedString32Bytes> playerName = new NetworkVariable<FixedString32Bytes>(
         "",
         NetworkVariableReadPermission.Everyone,
@@ -19,7 +21,9 @@ public class PlayerState : NetworkBehaviour
     {
         if (IsOwner)
         {
-            playerName.Value = PlayerIdentityManager.LocalPlayerName;
+            FixedString32Bytes name = default;
+            name.CopyFromTruncated(PlayerIdentityManager.LocalPlayerName ?? "Player");
+            playerName.Value = name;
         }
     }
 }

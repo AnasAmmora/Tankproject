@@ -64,6 +64,19 @@ public static class PoolManager
         GetOrCreateQueue(pooled.SourcePrefab).Enqueue(instance);
     }
 
+    public static void ReleaseActiveBullets()
+    {
+        foreach (Bullet bullet in Object.FindObjectsByType<Bullet>())
+            Release(bullet.gameObject);
+    }
+
+    public static void Clear()
+    {
+        if (poolRoot != null) Object.Destroy(poolRoot.gameObject);
+        pools.Clear();
+        poolRoot = null;
+    }
+
     private static Queue<GameObject> GetOrCreateQueue(GameObject prefab)
     {
         if (!pools.TryGetValue(prefab, out Queue<GameObject> queue))

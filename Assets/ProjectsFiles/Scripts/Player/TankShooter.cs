@@ -28,6 +28,9 @@ public class TankShooter : NetworkBehaviour
     private TankCameraShake ownerShake;
     private float nextFireTime;
     private uint nextShotId;
+    private uint lastServerShot;
+    private double nextServerFireAt;
+    private bool fireSubscribed;
 
     private void Awake()
     {
@@ -39,27 +42,29 @@ public class TankShooter : NetworkBehaviour
     {
         if (!IsOwner) return;
 
+        if (fireAction != null && !fireSubscribed)
+        {
+            fireAction.action.Enable();
+            fireAction.action.performed += OnFirePerformed;
+            fireSubscribed = true;
+        }
+
         if (aimCamera == null) aimCamera = Camera.main;
         if (aimCamera == null) aimCamera = FindAnyObjectByType<Camera>();
     }
 
-    private void OnEnable()
+    private void ClearFireSubscription()
     {
-        if (fireAction != null)
-        {
-            fireAction.action.Enable();
-            fireAction.action.performed += OnFirePerformed;
-        }
-    }
-
-    private void OnDisable()
-    {
-        if (fireAction != null)
+        if (fireAction != null && fireSubscribed)
         {
             fireAction.action.performed -= OnFirePerformed;
             fireAction.action.Disable();
+            fireSubscribed = false;
         }
     }
+
+    private void OnDisable() => ClearFireSubscription();
+    public override void OnNetworkDespawn() => ClearFireSubscription();
 
     private void OnFirePerformed(InputAction.CallbackContext context)
     {
@@ -69,6 +74,7 @@ public class TankShooter : NetworkBehaviour
 
     private void TryFire()
     {
+        if (!IsSpawned || !MatchManager.CanControl(GetComponent<PlayerHealth>())) return;
         if (Time.time < nextFireTime) return;
         nextFireTime = Time.time + fireCooldown;
 
@@ -84,6 +90,10 @@ public class TankShooter : NetworkBehaviour
     [ServerRpc]
     private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics)
     {
+        if (!MatchManager.CanControl(GetComponent<PlayerHealth>()) || shotId <= lastServerShot ||
+            NetworkManager.ServerTime.Time + 1d / Mathf.Max(1, NetworkManager.NetworkConfig.TickRate) < nextServerFireAt) return;
+        lastServerShot = shotId;
+        nextServerFireAt = NetworkManager.ServerTime.Time + fireCooldown;
         TraceShot(diagnostics, NetworkObjectId, shotId, ulong.MaxValue, "server-shot-received");
         if (!IsOwner)
         {
@@ -96,6 +106,7 @@ public class TankShooter : NetworkBehaviour
     [ClientRpc]
     private void FireClientRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics)
     {
+        if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.Running)) return;
         if (IsOwner) return;
 
         if (IsServer) return;
@@ -106,7 +117,7 @@ public class TankShooter : NetworkBehaviour
     private void SpawnBulletLocally(Vector3 pos, Vector3 dir, uint shotId, bool? diagnostics = null)
     {
         Quaternion bulletRotation = Quaternion.LookRotation(dir);
-        GameObject bulletInstance = Instantiate(bulletPrefab, pos, bulletRotation);
+        GameObject bulletInstance = PoolManager.Get(bulletPrefab, pos, bulletRotation);
 
         if (bulletInstance.TryGetComponent<Bullet>(out Bullet bullet))
         {

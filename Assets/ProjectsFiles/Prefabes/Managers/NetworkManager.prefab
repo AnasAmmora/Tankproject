@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 857374749207241961}
   - component: {fileID: 6440815157356466689}
   - component: {fileID: 431426781226206309}
+  - component: {fileID: 900002003}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -70,7 +71,7 @@ MonoBehaviour:
     EnableNetworkLogs: 1
     NetworkTopology: 0
     UseCMBService: 0
-    AutoSpawnPlayerPrefabClientSide: 1
+    AutoSpawnPlayerPrefabClientSide: 0
     NetworkMessageMetrics: 1
     NetworkProfilingMetrics: 1
     OldPrefabList: []
@@ -107,3 +108,16 @@ MonoBehaviour:
     PacketDelayMS: 0
     PacketJitterMS: 0
     PacketDropRate: 0
+--- !u!114 &900002003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 120955176349529219}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cebdd7675322431db9aba2cde9a5f1e6, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::MatchConnectionCoordinator
+  transitionTimeout: 90

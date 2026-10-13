@@ -23,6 +23,8 @@ public class PlayerIdentityManager : MonoBehaviour
 
     private const string PLAYER_NAME_KEY = "SavedPlayerName";
     public static string LocalPlayerName { get; private set; }
+    public static bool OpenBrowserOnNextMenu { get; set; }
+    private bool signInPending;
 
     private void Start()
     {
@@ -38,10 +40,17 @@ public class PlayerIdentityManager : MonoBehaviour
         }
 
         UpdateStatus("");
+        if (OpenBrowserOnNextMenu)
+        {
+            OpenBrowserOnNextMenu = false;
+            if (UnityServices.State == ServicesInitializationState.Initialized && AuthenticationService.Instance.IsSignedIn)
+                OpenRoomBrowser();
+        }
     }
 
     private async void OnStartGameClicked()
     {
+        if (signInPending) return;
         string inputName = nameInputField.text.Trim();
 
         if (string.IsNullOrEmpty(inputName))
@@ -50,6 +59,7 @@ public class PlayerIdentityManager : MonoBehaviour
             return;
         }
 
+        signInPending = true;
         startGameButton.interactable = false;
         UpdateStatus("Connecting to Unity services...");
 
@@ -57,17 +67,24 @@ public class PlayerIdentityManager : MonoBehaviour
         PlayerPrefs.Save();
         LocalPlayerName = inputName;
 
-        bool success = await InitializeAndSignInAsync(inputName);
-
-        if (success)
+        try
         {
-            UpdateStatus("Successfully signed in!");
-            OpenRoomBrowser();
+            bool success = await InitializeAndSignInAsync(inputName);
+            if (this == null) return;
+            if (success)
+            {
+                UpdateStatus("Successfully signed in!");
+                OpenRoomBrowser();
+            }
+            else UpdateStatus("Connection failed! Check your internet connection and try again.");
         }
-        else
+        finally
         {
-            UpdateStatus("Connection failed! Check your internet connection and try again.");
-            startGameButton.interactable = true;
+            if (this != null)
+            {
+                signInPending = false;
+                if (startGameButton != null) startGameButton.interactable = true;
+            }
         }
     }
 
@@ -98,12 +115,13 @@ public class PlayerIdentityManager : MonoBehaviour
                 await AuthenticationService.Instance.UpdatePlayerNameAsync(LocalPlayerName);
             }
 
-            Debug.Log($"[Auth Success] Profile: {cleanProfileName} | Player ID: {AuthenticationService.Instance.PlayerId}");
+            MatchConnectionCoordinator.Trace("Authentication", "signed in; identityFingerprint=" +
+                MatchParticipantRoster.TokenHash(AuthenticationService.Instance.PlayerId).Substring(0, 12));
             return true;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Auth Error] Failed to sign in: {e.Message}");
+            MatchConnectionCoordinator.Trace("Authentication", MatchConnectionCoordinator.ErrorDescription(e), warning: true);
             return false;
         }
     }
@@ -125,5 +143,10 @@ public class PlayerIdentityManager : MonoBehaviour
         {
             statusText.text = message;
         }
+    }
+
+    private void OnDestroy()
+    {
+        if (startGameButton != null) startGameButton.onClick.RemoveListener(OnStartGameClicked);
     }
 }
