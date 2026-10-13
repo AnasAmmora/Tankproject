@@ -520,7 +520,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   NetworkRigidbodyBaseExpanded: 0
   UseRigidBodyForMotion: 1
-  AutoUpdateKinematicState: 0
+  AutoUpdateKinematicState: 1
   AutoSetKinematicOnDespawn: 1
 --- !u!114 &6805210975593924208
 MonoBehaviour:
@@ -552,9 +552,11 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   moveSpeed: 1.5
   rotationSpeed: 60
-  tankModel: {fileID: 821829789860304782}
-  joltDistance: 0.5
-  joltSpeed: 15
+  driveAcceleration: 12
+  visualModel: {fileID: 821829789860304782}
+  anticipateConfirmedHits: 1
+  maxVisualOffset: 0.5
+  visualReconcileTime: 0.15
 --- !u!114 &3141899042598791565
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -108,7 +108,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -158,6 +158,6 @@ MonoBehaviour:
   maxLifetime: 5
   damageAmount: 25
   launchUpwardForce: 1.5
-  impactForce: 0
+  impactForce: 50
   impactEffectPrefab: {fileID: 1121192042590650, guid: e1b08032bec16ba4eb1ae23cbd572664, type: 3}
   effectDestroyTime: 2

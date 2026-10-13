@@ -21,9 +21,13 @@ public class TankShooter : NetworkBehaviour
     [SerializeField] private GameObject muzzleFlashPrefab;
     [SerializeField] private float muzzleFlashDestroyTime = 1.5f;
 
+    [Header("Diagnostics (Editor / Development Build)")]
+    [SerializeField] private bool logHitTiming;
+
     private Collider[] ownerColliders;
     private TankCameraShake ownerShake;
     private float nextFireTime;
+    private uint nextShotId;
 
     private void Awake()
     {
@@ -69,35 +73,37 @@ public class TankShooter : NetworkBehaviour
         nextFireTime = Time.time + fireCooldown;
 
         Vector3 direction = GetAimDirection();
+        uint shotId = ++nextShotId;
 
-        SpawnBulletLocally(muzzlePoint.position, direction);
+        SpawnBulletLocally(muzzlePoint.position, direction, shotId);
         ownerShake?.ShakeOnFire();
 
-        FireServerRpc(muzzlePoint.position, direction);
+        FireServerRpc(muzzlePoint.position, direction, shotId, logHitTiming);
     }
 
     [ServerRpc]
-    private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir)
+    private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics)
     {
+        TraceShot(diagnostics, NetworkObjectId, shotId, ulong.MaxValue, "server-shot-received");
         if (!IsOwner)
         {
-            SpawnBulletLocally(spawnPos, aimDir);
+            SpawnBulletLocally(spawnPos, aimDir, shotId, diagnostics);
         }
 
-        FireClientRpc(spawnPos, aimDir);
+        FireClientRpc(spawnPos, aimDir, shotId, diagnostics);
     }
 
     [ClientRpc]
-    private void FireClientRpc(Vector3 spawnPos, Vector3 aimDir)
+    private void FireClientRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics)
     {
         if (IsOwner) return;
 
         if (IsServer) return;
 
-        SpawnBulletLocally(spawnPos, aimDir);
+        SpawnBulletLocally(spawnPos, aimDir, shotId, diagnostics);
     }
 
-    private void SpawnBulletLocally(Vector3 pos, Vector3 dir)
+    private void SpawnBulletLocally(Vector3 pos, Vector3 dir, uint shotId, bool? diagnostics = null)
     {
         Quaternion bulletRotation = Quaternion.LookRotation(dir);
         GameObject bulletInstance = Instantiate(bulletPrefab, pos, bulletRotation);
@@ -110,7 +116,10 @@ public class TankShooter : NetworkBehaviour
                 myTeamIndex = pState.teamIndex.Value;
             }
 
-            bullet.Launch(dir, ownerColliders, IsOwner ? ownerShake : null, myTeamIndex);
+            bool trace = diagnostics ?? logHitTiming;
+            bullet.Launch(dir, ownerColliders, IsOwner ? ownerShake : null, myTeamIndex,
+                NetworkObjectId, shotId, trace);
+            TraceShot(trace, NetworkObjectId, shotId, ulong.MaxValue, "projectile-launched");
         }
 
         if (muzzleFlashPrefab != null)
@@ -118,6 +127,21 @@ public class TankShooter : NetworkBehaviour
             GameObject effect = Instantiate(muzzleFlashPrefab, pos, muzzlePoint.rotation);
             Destroy(effect, muzzleFlashDestroyTime);
         }
+    }
+
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+    public static void TraceShot(bool enabled, ulong shooterId, uint shotId, ulong targetId,
+        string stage, double confirmedAt = -1d, double elapsed = 0d)
+    {
+        if (!enabled || NetworkManager.Singleton == null) return;
+        NetworkManager manager = NetworkManager.Singleton;
+        // ServerTime is a buffered network timeline, not a wall-clock latency probe.
+        // Compare confirmStamp across peers; elapsed is measured only on this peer.
+        Debug.Log($"[HitTiming] node={manager.LocalClientId} shot={shooterId}:{shotId} " +
+            $"target={targetId} stage={stage} timeline={manager.ServerTime.Time:F4} " +
+            $"confirmStamp={confirmedAt:F4} localMark={Time.realtimeSinceStartupAsDouble:F4} " +
+            $"elapsedHere={elapsed:F4}");
     }
 
     private Vector3 GetAimDirection()
