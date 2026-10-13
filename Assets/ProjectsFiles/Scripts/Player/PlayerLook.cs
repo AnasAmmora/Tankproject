@@ -27,6 +27,8 @@ public class PlayerLook : NetworkBehaviour
     private float cameraYaw;
 
     private float referenceYaw;
+
+    private float localTurretYaw;
     private Quaternion headInitialRotation;
 
     public NetworkVariable<float> netTurretYaw = new NetworkVariable<float>(
@@ -50,6 +52,8 @@ public class PlayerLook : NetworkBehaviour
                 headInitialRotation = tankHead.rotation;
                 referenceYaw = transform.eulerAngles.y;
             }
+
+            localTurretYaw = referenceYaw;
             return;
         }
 
@@ -118,17 +122,20 @@ public class PlayerLook : NetworkBehaviour
     private void CalculateTurretAim()
     {
         if (tankHead == null) return;
-
         float targetYaw = cameraYaw + aimOffset;
 
-        netTurretYaw.Value = Mathf.MoveTowardsAngle(netTurretYaw.Value, targetYaw, headRotationSpeed * Time.deltaTime);
+        localTurretYaw = Mathf.MoveTowardsAngle(localTurretYaw, targetYaw, headRotationSpeed * Time.deltaTime);
+
+        netTurretYaw.Value = localTurretYaw;
     }
 
     private void ApplyTurretRotation()
     {
         if (tankHead == null) return;
 
-        float delta = Mathf.DeltaAngle(referenceYaw, netTurretYaw.Value);
+        float currentYaw = IsOwner ? localTurretYaw : netTurretYaw.Value;
+
+        float delta = Mathf.DeltaAngle(referenceYaw, currentYaw);
         if (invertTurretRotation) delta = -delta;
 
         tankHead.rotation = Quaternion.AngleAxis(delta, Vector3.up) * headInitialRotation;

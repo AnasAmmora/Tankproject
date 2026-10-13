@@ -349,6 +349,7 @@ GameObject:
   - component: {fileID: 4413154551280384071}
   - component: {fileID: 6666415672332137553}
   - component: {fileID: 1326213804012113766}
+  - component: {fileID: 7714933645308099243}
   - component: {fileID: 6805210975593924208}
   - component: {fileID: 744912970748391413}
   - component: {fileID: 3141899042598791565}
@@ -473,7 +474,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   NetworkTransformExpanded: 0
   AutoOwnerAuthorityTickOffset: 1
-  PositionInterpolationType: 0
+  PositionInterpolationType: 1
   RotationInterpolationType: 0
   ScaleInterpolationType: 0
   PositionLerpSmoothing: 1
@@ -503,7 +504,24 @@ MonoBehaviour:
   InLocalSpace: 0
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
-  SlerpPosition: 0
+  SlerpPosition: 1
+--- !u!114 &7714933645308099243
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6930759457325569799}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f6c0be61502bb534f922ebb746851216, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Components.NetworkRigidbody
+  ShowTopMostFoldoutHeaderGroup: 1
+  NetworkRigidbodyBaseExpanded: 0
+  UseRigidBodyForMotion: 1
+  AutoUpdateKinematicState: 0
+  AutoSetKinematicOnDespawn: 1
 --- !u!114 &6805210975593924208
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -534,6 +552,9 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   moveSpeed: 1.5
   rotationSpeed: 60
+  tankModel: {fileID: 821829789860304782}
+  joltDistance: 0.5
+  joltSpeed: 15
 --- !u!114 &3141899042598791565
 MonoBehaviour:
   m_ObjectHideFlags: 0

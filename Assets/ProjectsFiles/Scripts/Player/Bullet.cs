@@ -56,9 +56,7 @@ public class Bullet : MonoBehaviour
     private void OnCollisionEnter(Collision collision)
     {
         ContactPoint contact = collision.GetContact(0);
-
         if (ownerShake != null) ownerShake.ShakeOnHit();
-
 
         if (NetworkManager.Singleton.IsServer)
         {
@@ -67,12 +65,19 @@ public class Bullet : MonoBehaviour
 
             TeamBase hitBase = collision.gameObject.GetComponentInParent<TeamBase>();
             if (hitBase != null) hitBase.TakeDamage(damageAmount, attackerTeam);
+        }
 
-            PlayerMovement hitTank = collision.gameObject.GetComponentInParent<PlayerMovement>();
-            if (hitTank != null)
+        PlayerMovement hitTank = collision.gameObject.GetComponentInParent<PlayerMovement>();
+        if (hitTank != null)
+        {
+            if (hitTank.IsOwner)
             {
                 Vector3 pushForce = rb.linearVelocity.normalized * impactForce;
-                hitTank.ApplyImpactClientRpc(pushForce);
+                hitTank.GetComponent<Rigidbody>().AddForce(pushForce, ForceMode.Impulse);
+            }
+            else
+            {
+                hitTank.TriggerVisualJolt(rb.linearVelocity.normalized);
             }
         }
 
