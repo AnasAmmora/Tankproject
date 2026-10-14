@@ -24,6 +24,7 @@ def documents(path):
 
 loading_text, loading = documents('Prefabes/UI/LoadingCanvas.prefab')
 match_text, match = documents('Prefabes/UI/MatchCanvas.prefab')
+row_text, row = documents('Prefabes/UI/ResultRow.prefab')
 player_text, player = documents('Prefabes/Player.prefab')
 legacy_text, legacy = documents('Prefabes/UI/LegacyNetworkLobbyCanvas.prefab')
 menu_text, menu = documents('Scenes/MainMenuScene.unity')
@@ -53,8 +54,28 @@ check('m_AnchorMin: {x: 0.5, y: 0}' in loading['2065278308763012384'][1], 'Statu
 
 binding(match, 900011003, 'matchCanvas', 223)
 binding(match, 900011003, 'uiRaycaster', 114, 'UnityEngine.UI.GraphicRaycaster')
-for field in ('timer', 'lifeStatus', 'resultTitle', 'firstTeam', 'secondTeam'):
+for field in ('timer', 'lifeStatus', 'resultTitle'):
     binding(match, 900011003, field, 114, 'TMPro.TextMeshProUGUI')
+for field in ('blueRows', 'redRows'):
+    binding(match, 900011003, field, 224)
+check('rowPrefab: {fileID: 901000004, guid: 15328f8ef6aa456fb6227ec76ff26693, type: 3}' in match_text,
+      'MatchHud uses the authored ResultRow component prefab')
+check('BlueResults' not in match_text and 'RedResults' not in match_text and
+      'firstTeam:' not in match_text and 'secondTeam:' not in match_text, 'Old text elements/references removed')
+for field in ('playerName', 'kills', 'deaths'):
+    binding(row, 901000004, field, 114, 'TMPro.TextMeshProUGUI')
+for field in ('evenBackground', 'oddBackground', 'localMarker'):
+    binding(row, 901000004, field, 1)
+check('m_HorizontalAlignment: 1' in row['901004003'][1], 'Player names align left')
+check(all('m_HorizontalAlignment: 2' in row[id][1] for id in ('901005003','901006003')), 'Numbers align center')
+check('HorizontalLayoutGroup' in row['901000002'][1], 'Rows use an authored HorizontalLayoutGroup')
+for b in (902001000,902002000):
+    check('VerticalLayoutGroup' in match[str(b+4)][1], 'Team table uses vertical layout')
+    check('HorizontalLayoutGroup' in match[str(b+204)][1], 'Column header uses horizontal layout')
+    check('VerticalLayoutGroup' in match[str(b+302)][1], 'Repeated rows use vertical layout')
+    for cell_offset,row_cell,weight in ((210,'901004004',3),(220,'901005004',1),(230,'901006004',1)):
+        check(f'm_FlexibleWidth: {weight}' in match[str(b+cell_offset+4)][1] and
+              f'm_FlexibleWidth: {weight}' in row[row_cell][1], 'Header and row share the same column proportions')
 binding(match, 900011003, 'resultsPanel', 1)
 binding(match, 900011003, 'back', 114, 'UnityEngine.UI.Button')
 binding(match, 900011003, 'sceneEventSystem', 114, 'UnityEngine.EventSystems.EventSystem')

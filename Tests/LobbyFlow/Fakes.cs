@@ -20,6 +20,8 @@ namespace UnityEngine
         public static void Destroy(Object obj) { }
         public static void DontDestroyOnLoad(Object obj) { }
         public static GameObject Instantiate(GameObject original, Transform parent) => new("clone");
+        public static Func<Object, Transform, Object> PrefabFactory;
+        public static T Instantiate<T>(T original, Transform parent) where T : Object => (T)PrefabFactory(original, parent);
     }
     public class Component : Object
     {
@@ -59,6 +61,7 @@ namespace UnityEngine
         public Transform parent;
         public bool IsChildOf(Transform value) => parent == value || (parent != null && parent.IsChildOf(value));
         public void SetParent(Transform value, bool stay) { parent = value; }
+        public void SetSiblingIndex(int index) { }
         public IEnumerator<Transform> GetEnumerator() { yield break; }
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }

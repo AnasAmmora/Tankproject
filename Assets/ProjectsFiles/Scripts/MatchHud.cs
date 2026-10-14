@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
@@ -18,14 +19,19 @@ public class MatchHud : MonoBehaviour
     [SerializeField] private TMP_Text timer;
     [SerializeField] private TMP_Text lifeStatus;
     [SerializeField] private TMP_Text resultTitle;
-    [SerializeField] private TMP_Text firstTeam;
-    [SerializeField] private TMP_Text secondTeam;
+    [SerializeField] private Transform blueRows;
+    [SerializeField] private Transform redRows;
+    [SerializeField] private ResultRow rowPrefab;
     [SerializeField] private GameObject resultsPanel;
     [SerializeField] private Button back;
     [SerializeField] private EventSystem sceneEventSystem;
     [SerializeField] private string menuSceneName = "MainMenuScene";
     private MatchResults displayed;
     private bool configured;
+    private readonly Dictionary<ulong, ResultRow> blueEntries = new Dictionary<ulong, ResultRow>();
+    private readonly Dictionary<ulong, ResultRow> redEntries = new Dictionary<ulong, ResultRow>();
+    private ulong? localClientId;
+    private ulong? displayedLocalClientId;
 
     private void Awake()
     {
@@ -57,8 +63,10 @@ public class MatchHud : MonoBehaviour
         valid &= Required(timer, nameof(timer));
         valid &= Required(lifeStatus, nameof(lifeStatus));
         valid &= Required(resultTitle, nameof(resultTitle));
-        valid &= Required(firstTeam, nameof(firstTeam));
-        valid &= Required(secondTeam, nameof(secondTeam));
+        valid &= Required(blueRows, nameof(blueRows));
+        valid &= Required(redRows, nameof(redRows));
+        valid &= Required(rowPrefab, nameof(rowPrefab));
+        if (rowPrefab != null) valid &= rowPrefab.ValidateReferences();
         valid &= Required(resultsPanel, nameof(resultsPanel));
         valid &= Required(back, nameof(back));
         valid &= Required(sceneEventSystem, nameof(sceneEventSystem));
@@ -80,6 +88,7 @@ public class MatchHud : MonoBehaviour
     private void Update()
     {
         if (!configured) return;
+        CaptureLocalIdentity();
         if (MatchResults.LocalFinal != null) { ShowFinal(); return; }
         MatchManager match = MatchManager.Instance;
         NetworkManager network = NetworkManager.Singleton;
@@ -103,6 +112,7 @@ public class MatchHud : MonoBehaviour
     {
         MatchResults result = MatchResults.LocalFinal;
         if (!configured || result == null) return;
+        CaptureLocalIdentity();
         resultsPanel.SetActive(true);
         timer.gameObject.SetActive(false);
         lifeStatus.gameObject.SetActive(false);
@@ -112,17 +122,47 @@ public class MatchHud : MonoBehaviour
         if (player != null && player.TryGetComponent<PlayerCanvasController>(out var ui)) ui.RefreshVisibility();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-        if (displayed == result) return;
+        if (displayed == result && displayedLocalClientId == localClientId) return;
         displayed = result;
+        displayedLocalClientId = localClientId;
         resultTitle.text = result.winner < 0 ? "Draw" : (result.winner == 0 ? "Blue team wins" : "Red team wins");
-        firstTeam.text = TeamSummary(result, 0);
-        secondTeam.text = TeamSummary(result, 1);
+        UpdateRows(result, 0, blueRows, blueEntries);
+        UpdateRows(result, 1, redRows, redEntries);
     }
 
-    private static string TeamSummary(MatchResults result, int team) =>
-        (team == 0 ? "Blue team" : "Red team") + "\n\n" + string.Join("\n\n", result.players
-            .Where(p => p.team == team).Select(p => p.name + (p.disconnected ? " (Disconnected)" : "") +
-                "\nKills: " + p.kills + "    Deaths: " + p.deaths));
+    private void CaptureLocalIdentity()
+    {
+        NetworkManager network = NetworkManager.Singleton;
+        // NGO resets its local ID on shutdown. Retain the identity from this match
+        // so the highlight remains correct after the host leaves the results.
+        if (!localClientId.HasValue && network != null && network.IsConnectedClient)
+            localClientId = network.LocalClientId;
+    }
+
+    private void UpdateRows(MatchResults result, int team, Transform container, Dictionary<ulong, ResultRow> entries)
+    {
+        var players = (result.players ?? Array.Empty<MatchRules.PlayerRecord>())
+            .Where(p => p != null && p.team == team).GroupBy(p => p.clientId).Select(group => group.Last())
+            .OrderBy(p => p.ordinal).ThenBy(p => p.clientId).ToArray();
+        var present = new HashSet<ulong>(players.Select(p => p.clientId));
+        foreach (ulong id in entries.Keys.Where(id => !present.Contains(id)).ToArray())
+        {
+            entries[id].gameObject.SetActive(false);
+            Destroy(entries[id].gameObject);
+            entries.Remove(id);
+        }
+        for (int i = 0; i < players.Length; i++)
+        {
+            var player = players[i];
+            if (!entries.TryGetValue(player.clientId, out ResultRow row))
+            {
+                row = Instantiate(rowPrefab, container);
+                entries.Add(player.clientId, row);
+            }
+            row.transform.SetSiblingIndex(i);
+            row.Bind(player, i % 2 != 0, localClientId == player.clientId);
+        }
+    }
 
     private void OnBack()
     {
@@ -148,6 +188,9 @@ public class MatchHud : MonoBehaviour
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         if (back != null) back.onClick.RemoveListener(OnBack);
+        // Instantiated rows belong to this canvas and are destroyed with its root.
+        blueEntries.Clear();
+        redEntries.Clear();
         if (Instance == this) Instance = null;
     }
 }
