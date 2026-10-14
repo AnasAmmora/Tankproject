@@ -106,7 +106,8 @@ public class MatchConnectionCoordinator : MonoBehaviour
         deadline = Time.realtimeSinceStartupAsDouble + transitionTimeout;
         generation++;
         screen = LoadingScreenController.Instance;
-        if (screen == null) throw new InvalidOperationException("LoadingScreenController is missing from the menu scene.");
+        if (screen == null || !screen.IsConfigured)
+            throw new InvalidOperationException("LoadingCanvas is missing or its LoadingScreenController Inspector references are incomplete. See the preceding UI errors.");
         screen.ReturnRequested -= DismissFailure;
         screen.ReturnRequested += DismissFailure;
         screen.Show("Connecting");

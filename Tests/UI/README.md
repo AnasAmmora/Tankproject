@@ -1,0 +1,33 @@
+# التحقق من واجهات TankProject
+
+جميع الواجهات محفوظة في المشاهد أو Prefabs. السكربتات لا تنشئ UI عند التشغيل.
+
+الربط المنفّذ:
+
+- `MainMenuScene`: نسخة واحدة من `LoadingCanvas.prefab`. السكربت على Root الـCanvas، والـRoot مفعّل دائمًا. الإخفاء يعطّل Canvas وGraphicRaycaster فقط. المراجع الداخلية للصورة والنص وزر الرجوع محفوظة في الـPrefab.
+- `GameScene`: نسخة واحدة من `MatchCanvas.prefab` بدل كائن MatchHud القديم. مراجع العداد وحالة الحياة وعنوان النتائج وإحصائيات الفريقين وBack محفوظة. EventSystem مصمّم داخل الـPrefab ويُعطّل قبل إزالة واجهة المباراة عند الرجوع للقائمة.
+- `Player.prefab`: PlayerCanvasController على Root اللاعب، ومرجع playerCanvas يشير إلى Canvas واجهة اللاعب فقط. النتائج تُخفي هذه الواجهة فورًا؛ وجود النتيجة المحفوظة يمنع إعادة ظهورها بعد التهيئة المتأخرة. المالك وحده يرى PlayerCanvas.
+- `SampleScene`: واجهة اختبار الشبكة القديمة أصبحت `LegacyNetworkLobbyCanvas.prefab` بدل OnGUI، مع الأزرار وحالة الاتصال ومراجعها.
+- نص `operationStatus` مربوط أصلًا بعنصر مصمّم في القائمة. أزيل مسار إنشائه برمجيًا. لا توجد خطوات ربط يدوية لازمة للملفات المحفوظة الحالية.
+
+## اختبارات بدون Unity
+
+```powershell
+dotnet run --project Tests/UI/UI.Tests.csproj
+dotnet run --project Tests/LobbyFlow/LobbyFlow.Tests.csproj
+dotnet run --project Tests/MatchRules/MatchRules.Tests.csproj
+python Tests/UI/verify_assets.py
+```
+
+اختبار UI يجمع سكربتات التحميل والنتائج وواجهة اللاعب الفعلية مقابل محاكاة صغيرة للمحرك. يفحص منع التكرار، الإخفاء، المراجع المفقودة، عرض النتائج قبل/بعد إنشاء اللاعب، تفعيل UI متأخرًا، والعودة ثم تهيئة واجهة مباراة جديدة. اختبار المراجع يقرأ IDs والربط في الملفات؛ لا يستورد الأصول أو يرسمها بمحرك Unity. المخرجات المولّدة لاختبارات .NET تقع في TEMP.
+
+## المقارنة داخل Unity
+
+1. أعد تحميل المشاهد المحفوظة بعد حفظ أي تعديلات Editor أخرى، وافحص عدم وجود Missing Script/Reference. أعد بناء نسختي الاختبار بسبب إضافة NetworkBehaviour إلى Player prefab.
+2. من MainMenuScene: Create ثم Join ثم Ready ثم Start. تحقق أن LoadingCanvas واحد فقط ينتقل إلى DontDestroyOnLoad، ويعرض Connecting/Loading/Waiting for players، ثم يختفي عند جاهزية الجميع. لا تبدأ الحركة أو الرماية قبله.
+3. في GameScene تحقق من وجود MatchCanvas واحد وMatchEventSystem واحد، مع ظهور العداد وحالة الموت/العودة. جرّب دقات 1920×1080 و1280×720 وشاشة طويلة، وافحص خلفية التحميل ونص الحالة وأعمدة النتائج.
+4. أنْهِ مباراة أو قلّل زمنها مؤقتًا من Inspector للاختبار. يجب إظهار Results وإخفاء PlayerCanvas المحلي فورًا؛ يبقى Root اللاعب وNetworkObject وباقي سلوك الشبكة مفعّلين. اختبر أيضًا تفعيل PlayerCanvas يدويًا أثناء النتائج: يجب أن يعيد السكربت إخفاءه في LateUpdate.
+5. اترك Host يغادر بعد النتائج، وتأكد أن Client يحتفظ بالنتيجة وزر Back. اضغط Back، ثم أنشئ غرفة ثانية وابدأ مباراة جديدة. لا تبقى MatchCanvas/MatchEventSystem قديمة، ولا يتضاعف LoadingCanvas، ولا تتكرر استدعاءات الأزرار.
+6. اختبر فشل بدء الاتصال والرجوع: يُخفى LoadingCanvas بعد التعافي، ويصبح GraphicRaycaster غير مفعّل، وتبقى القائمة قابلة للنقر مع رسالة الخطأ المصمّمة فيها.
+
+لم تُنفّذ هذه المقارنة متعددة اللاعبين أو المعاينة البصرية داخل Unity هنا. نجاح الاختبارات المحاكاة والتجميع لا يثبت نجاح Relay أو سلامة عرض الواجهة على الأجهزة.

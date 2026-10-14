@@ -17,14 +17,20 @@ public class RoomItemUI : MonoBehaviour
         lobby = _lobby;
         lobbyManager = _manager;
 
-        // استخراج اسم صاحب الغرفة من البيانات الإضافية
-        string hostName = lobby.Data.ContainsKey("HostName") ? lobby.Data["HostName"].Value : "Unknown";
+        if (roomNameText == null || playerCountText == null || joinButton == null)
+        {
+            Debug.LogError($"RoomItemUI on '{name}': missing Inspector reference '{(roomNameText == null ? nameof(roomNameText) : playerCountText == null ? nameof(playerCountText) : nameof(joinButton))}'.", this);
+            return;
+        }
+        string hostName = lobby.Data != null && lobby.Data.ContainsKey("HostName") ? lobby.Data["HostName"].Value : "Unknown";
         roomNameText.text = hostName + "'s Room";
 
         playerCountText.text = $"{lobby.Players.Count}/{lobby.MaxPlayers}";
 
-        // عند الضغط على Join، نخبر الـ LobbyManager بالانضمام لهذه الغرفة
-        joinButton.onClick.RemoveAllListeners();
-        joinButton.onClick.AddListener(() => lobbyManager.JoinLobby(lobby));
+        joinButton.onClick.RemoveListener(OnJoin);
+        joinButton.onClick.AddListener(OnJoin);
     }
+
+    private void OnJoin() => lobbyManager.JoinLobby(lobby);
+    private void OnDestroy() { if (joinButton != null) joinButton.onClick.RemoveListener(OnJoin); }
 }

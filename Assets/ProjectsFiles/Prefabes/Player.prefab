@@ -511,7 +511,7 @@ GameObject:
   - component: {fileID: 1504145853913097874}
   - component: {fileID: 6265798042123323890}
   m_Layer: 5
-  m_Name: Canvas
+  m_Name: PlayerCanvas
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -893,6 +893,7 @@ GameObject:
   - component: {fileID: 4834099022764106920}
   - component: {fileID: 1650317171758017091}
   - component: {fileID: 4370067029423320565}
+  - component: {fileID: 900012003}
   m_Layer: 6
   m_Name: Player
   m_TagString: Untagged
@@ -1691,3 +1692,16 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!114 &900012003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6930759457325569799}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3768fb57419e4a0e8e0b7188789720ab, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerCanvasController
+  playerCanvas: {fileID: 5328343828189518156}

@@ -46,6 +46,7 @@ public class LobbyManager : MonoBehaviour
     private int revision;
     private bool pollWarningShown;
     private bool heartbeatWarningShown;
+    private bool missingStatusReported;
     private bool HasLocalTicket => currentLobby?.Players != null && !string.IsNullOrEmpty(localJoinToken) &&
         currentLobby.Players.Any(p => p.Id == AuthenticationService.Instance.PlayerId && p.Data != null &&
         p.Data.TryGetValue("ConnectionTokenHash", out PlayerDataObject hash) && hash.Value == MatchParticipantRoster.TokenHash(localJoinToken));
@@ -54,6 +55,20 @@ public class LobbyManager : MonoBehaviour
 
     private void Start()
     {
+        bool valid = true;
+        valid &= Required(roomBrowserPanel, nameof(roomBrowserPanel));
+        valid &= Required(maxPlayersDropdown, nameof(maxPlayersDropdown));
+        valid &= Required(createRoomButton, nameof(createRoomButton));
+        valid &= Required(refreshButton, nameof(refreshButton));
+        valid &= Required(roomListContainer, nameof(roomListContainer));
+        valid &= Required(roomItemPrefab, nameof(roomItemPrefab));
+        valid &= Required(waitingRoomPanel, nameof(waitingRoomPanel));
+        valid &= Required(playersListText, nameof(playersListText));
+        valid &= Required(readyButton, nameof(readyButton));
+        valid &= Required(startGameButton, nameof(startGameButton));
+        valid &= Required(leaveRoomButton, nameof(leaveRoomButton));
+        valid &= Required(operationStatus, nameof(operationStatus));
+        if (!valid) { enabled = false; return; }
         createRoomButton.onClick.AddListener(CreateRoom);
         refreshButton.onClick.AddListener(RefreshLobbyList);
         readyButton.onClick.AddListener(ToggleReady);
@@ -61,6 +76,13 @@ public class LobbyManager : MonoBehaviour
         leaveRoomButton.onClick.AddListener(LeaveLobby);
         waitingRoomPanel.SetActive(currentLobby != null);
         UpdateControls();
+    }
+
+    private bool Required(UnityEngine.Object value, string field)
+    {
+        if (value != null) return true;
+        Debug.LogError($"LobbyManager on '{name}': missing Inspector reference '{field}'.", this);
+        return false;
     }
 
     private void Update()
@@ -98,29 +120,18 @@ public class LobbyManager : MonoBehaviour
             : error.Message + " Please try again."));
     }
 
-    // A non-modal notice on the menu's existing Canvas; it never intercepts input.
+    // The menu scene supplies this text; missing UI is reported, never generated.
     public void ShowNotice(string message)
     {
         if (this == null || destroyed) return;
         if (operationStatus == null)
         {
-            Canvas canvas = roomBrowserPanel.GetComponentInParent<Canvas>();
-            if (canvas == null) return;
-            GameObject text = new GameObject("LobbyOperationStatus", typeof(RectTransform), typeof(TextMeshProUGUI));
-            text.transform.SetParent(canvas.transform, false);
-            operationStatus = text.GetComponent<TextMeshProUGUI>();
-            operationStatus.font = playersListText != null ? playersListText.font : TMP_Settings.defaultFontAsset;
-            operationStatus.fontSize = 24;
-            operationStatus.color = Color.white;
-            operationStatus.alignment = TextAlignmentOptions.Center;
-            operationStatus.richText = false;
-            operationStatus.raycastTarget = false;
-            RectTransform rect = operationStatus.rectTransform;
-            rect.anchorMin = new Vector2(0.05f, 0f);
-            rect.anchorMax = new Vector2(0.95f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.sizeDelta = new Vector2(0f, 100f);
-            rect.anchoredPosition = new Vector2(0f, 12f);
+            if (!missingStatusReported)
+            {
+                missingStatusReported = true;
+                Debug.LogError($"LobbyManager on '{name}': missing Inspector reference 'operationStatus'.", this);
+            }
+            return;
         }
         operationStatus.text = message;
     }

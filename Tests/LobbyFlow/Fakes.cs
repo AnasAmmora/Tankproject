@@ -14,6 +14,7 @@ namespace UnityEngine
     public class RequireComponent(Type type) : Attribute { }
     public class Object
     {
+        public string name;
         public static readonly Dictionary<Type, object> Found = new();
         public static T FindAnyObjectByType<T>() where T : class => Found.TryGetValue(typeof(T), out var value) ? (T)value : null;
         public static void Destroy(Object obj) { }
@@ -22,11 +23,13 @@ namespace UnityEngine
     }
     public class Component : Object
     {
+        public bool enabled = true;
         public readonly Dictionary<Type, object> Components = new();
         public GameObject gameObject;
         public Transform transform => gameObject?.transform;
         public T GetComponent<T>() where T : class => Components.TryGetValue(typeof(T), out var value) ? (T)value : gameObject?.GetComponent<T>();
         public T GetComponentInParent<T>() where T : class => GetComponent<T>();
+        public bool TryGetComponent<T>(out T value) where T : class { value = GetComponent<T>(); return value != null; }
         public T[] GetComponentsInChildren<T>(bool includeInactive) => Array.Empty<T>();
     }
     public class MonoBehaviour : Component
@@ -41,6 +44,7 @@ namespace UnityEngine
         private readonly Dictionary<Type, Component> components = new();
         public GameObject(string name = "", params Type[] types)
         {
+            this.name = name;
             transform = new RectTransform { gameObject = this };
             foreach (Type type in types) components[type] = (Component)Activator.CreateInstance(type);
             foreach (var component in components.Values) component.gameObject = this;
@@ -52,7 +56,9 @@ namespace UnityEngine
     }
     public class Transform : Component, IEnumerable<Transform>
     {
-        public void SetParent(Transform parent, bool stay) { }
+        public Transform parent;
+        public bool IsChildOf(Transform value) => parent == value || (parent != null && parent.IsChildOf(value));
+        public void SetParent(Transform value, bool stay) { parent = value; }
         public IEnumerator<Transform> GetEnumerator() { yield break; }
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
@@ -69,6 +75,7 @@ namespace UnityEngine
         public static readonly List<string> Messages = new();
         public static void Log(object value) => Messages.Add(value.ToString());
         public static void LogWarning(object value) => Messages.Add(value.ToString());
+        public static void LogError(object value, Object context = null) => Messages.Add(value.ToString());
     }
     public static class JsonUtility
     {
@@ -83,14 +90,17 @@ namespace UnityEngine.SceneManagement
     public struct Scene { public string name; public bool isLoaded; }
     public static class SceneManager
     {
+        public static event Action<Scene, LoadSceneMode> sceneLoaded;
         public static string Active = "MainMenuScene";
         public static Scene GetActiveScene() => new() { name = Active, isLoaded = true };
         public static Scene GetSceneByName(string name) => new() { name = name, isLoaded = Active == name };
-        public static UnityEngine.AsyncOperation LoadSceneAsync(string name, LoadSceneMode mode) { Active = name; return new(); }
+        public static UnityEngine.AsyncOperation LoadSceneAsync(string name, LoadSceneMode mode)
+        { Active = name; sceneLoaded?.Invoke(GetActiveScene(), mode); return new(); }
     }
 }
 namespace UnityEngine.UI
 {
+    public class GraphicRaycaster : UnityEngine.Component { }
     public class Button : UnityEngine.Component
     {
         public bool interactable = true;
@@ -98,6 +108,7 @@ namespace UnityEngine.UI
         public class ClickEvent { public void AddListener(Action action) { } public void RemoveListener(Action action) { } }
     }
 }
+namespace UnityEngine.EventSystems { public class EventSystem : UnityEngine.MonoBehaviour { } }
 namespace TMPro
 {
     public enum TextAlignmentOptions { Center }
@@ -197,6 +208,14 @@ namespace Unity.Services.Relay
 }
 namespace Unity.Netcode
 {
+    public class NetworkBehaviour : UnityEngine.MonoBehaviour
+    {
+        public bool IsOwner, IsSpawned;
+        public virtual void OnNetworkSpawn() { }
+        public virtual void OnNetworkDespawn() { }
+    }
+    public class NetworkObject : UnityEngine.Component { }
+    public class NetworkVariable<T>(T value) { public T Value = value; }
     public enum SceneEventProgressStatus { Started, SceneFailedVerification }
     public enum SceneEventType { Synchronize, Load, LoadComplete, SynchronizeComplete, LoadEventCompleted }
     public class SceneEvent { public SceneEventType SceneEventType; public string SceneName; public ulong ClientId; public List<ulong> ClientsThatTimedOut; }
@@ -209,6 +228,10 @@ namespace Unity.Netcode
     public class NetworkConfig { public bool ConnectionApproval, AutoSpawnPlayerPrefabClientSide; public byte[] ConnectionData; }
     public class NetworkManager : UnityEngine.MonoBehaviour
     {
+        public static NetworkManager Singleton;
+        public class Client { public NetworkObject PlayerObject; }
+        public class Clock { public double Time; }
+        public Client LocalClient = new(); public Clock ServerTime = new();
         public static ulong ServerClientId => 0;
         public ulong LocalClientId;
         public bool IsListening, ShutdownInProgress, IsServer, IsConnectedClient, HostResult = true, ClientResult = true;
@@ -237,19 +260,30 @@ namespace Unity.Netcode.Transports.UTP
 }
 public class PlayerIdentityManager { public static string LocalPlayerName = "Tester"; public static bool OpenBrowserOnNextMenu; }
 public class RoomItemUI : UnityEngine.Component { public void Initialize(Lobby lobby, LobbyManager manager) { } }
+#if !UI_FLOW_TESTS
 public class LoadingScreenController
 {
     public static LoadingScreenController Instance = new();
+    public bool IsConfigured = true;
     public bool Visible; public string Message; public event Action ReturnRequested;
     public void Show(string message) { Visible = true; Message = message; }
     public void ShowError(string message, bool canReturn) => Show(message);
     public void Hide() => Visible = false;
 }
 public class MatchResults { public static object LocalFinal; public static void Clear() => LocalFinal = null; }
+#endif
 public class MatchManager
 {
     public static MatchManager Instance; public bool IsSpawned, FinalSnapshotsDelivered = true;
+    public bool Running;
+    public Unity.Netcode.NetworkVariable<int> phase = new(0), destroyedBases = new(0);
+    public Unity.Netcode.NetworkVariable<double> phaseEndsAt = new(0);
     public void BroadcastAbort(string reason) => MatchConnectionCoordinator.Instance.ReturnAfterFailure(reason);
 }
+#if !UI_FLOW_TESTS
 public class MatchHud { public static MatchHud Instance; public void ShowFinal() { } }
+#endif
+public class PlayerHealth : UnityEngine.Component
+{ public Unity.Netcode.NetworkVariable<bool> isDead = new(false); public Unity.Netcode.NetworkVariable<double> respawnAt = new(-1); }
+public class PlayerState : UnityEngine.Component { public Unity.Netcode.NetworkVariable<int> teamIndex = new(0); }
 public static class PoolManager { public static void Clear() { } }

@@ -1,64 +1,75 @@
 using UnityEngine;
 using Unity.Netcode;
+using UnityEngine.UI;
+using TMPro;
 
+// SampleScene's direct-network test controls, authored in a UI prefab.
 public class NetworkLobbyUI : MonoBehaviour
 {
+    [SerializeField] private Button hostButton;
+    [SerializeField] private Button clientButton;
+    [SerializeField] private TMP_Text connectionStatus;
+    private NetworkManager network;
+    private bool subscribed;
+    private string failure;
+
     private void Start()
     {
-        // نتأكد من وجود Singleton قبل إضافة الـ Callback
-        if (NetworkManager.Singleton != null)
+        if (hostButton == null || clientButton == null || connectionStatus == null)
         {
-            NetworkManager.Singleton.ConnectionApprovalCallback += ApprovalCheck;
+            Debug.LogError($"NetworkLobbyUI on '{name}': missing Inspector reference '{(hostButton == null ? nameof(hostButton) : clientButton == null ? nameof(clientButton) : nameof(connectionStatus))}'.", this);
+            enabled = false;
+            return;
         }
+        network = NetworkManager.Singleton;
+        if (network == null)
+        {
+            Debug.LogError("NetworkLobbyUI: NetworkManager is missing from SampleScene.", this);
+            connectionStatus.text = "NetworkManager is missing from the scene.";
+            hostButton.interactable = clientButton.interactable = false;
+            enabled = false;
+            return;
+        }
+        hostButton.onClick.AddListener(StartHost);
+        clientButton.onClick.AddListener(StartClient);
+        network.ConnectionApprovalCallback += ApprovalCheck;
+        subscribed = true;
     }
 
     private void ApprovalCheck(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
     {
-        if (NetworkManager.Singleton.ConnectedClients.Count >= 4)
-        {
-            response.Approved = false;
-            response.Reason = "Lobby is full!";
-        }
-        else
-        {
-            response.Approved = true;
-            response.CreatePlayerObject = true;
-        }
+        response.Approved = network.ConnectedClients.Count < 4;
+        response.Reason = response.Approved ? "" : "Lobby is full!";
+        response.CreatePlayerObject = response.Approved;
     }
 
-    private void OnGUI()
+    private void StartHost()
     {
-        // حماية واجهة المستخدم من الانهيار إذا لم يكن هناك NetworkManager
-        if (NetworkManager.Singleton == null)
-        {
-            GUILayout.Label("NetworkManager is missing in the scene!");
-            return;
-        }
+        if (network.IsListening) return;
+        failure = network.StartHost() ? "" : "Could not start Host. See the Netcode log.";
+    }
 
-        GUILayout.BeginArea(new Rect(10, 10, 300, 300));
+    private void StartClient()
+    {
+        if (network.IsListening) return;
+        failure = network.StartClient() ? "" : "Could not start Client. See the Netcode log.";
+    }
 
-        try
-        {
-            if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
-            {
-                if (GUILayout.Button("Start Host (Player 1)"))
-                {
-                    NetworkManager.Singleton.StartHost();
-                }
-                if (GUILayout.Button("Join Client (Player 2,3,4)"))
-                {
-                    NetworkManager.Singleton.StartClient();
-                }
-            }
-            else
-            {
-                GUILayout.Label($"Players connected: {NetworkManager.Singleton.ConnectedClients.Count} / 4");
-            }
-        }
-        finally
-        {
-            // نضمن دائماً إغلاق الـ Area حتى لو حدث خطأ في الأعلى
-            GUILayout.EndArea();
-        }
+    private void Update()
+    {
+        if (network == null) return;
+        bool connected = network.IsClient || network.IsServer;
+        hostButton.gameObject.SetActive(!connected);
+        clientButton.gameObject.SetActive(!connected);
+        hostButton.interactable = clientButton.interactable = !network.IsListening && !network.ShutdownInProgress;
+        connectionStatus.text = connected ? $"Players connected: {network.ConnectedClients.Count} / 4" : failure ?? "Start Host or join as Client.";
+    }
+
+    private void OnDestroy()
+    {
+        if (hostButton != null) hostButton.onClick.RemoveListener(StartHost);
+        if (clientButton != null) clientButton.onClick.RemoveListener(StartClient);
+        if (subscribed && network != null) network.ConnectionApprovalCallback -= ApprovalCheck;
+        subscribed = false;
     }
 }

@@ -5,42 +5,81 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
-using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 
-// Presentation survives host disconnection after results. All decisions stay on server.
+// Uses the scene's authored MatchCanvas. Persistence keeps final results available
+// if the network host leaves first; returning to the menu removes this entire root.
 public class MatchHud : MonoBehaviour
 {
     public static MatchHud Instance { get; private set; }
-    [SerializeField] private TMP_FontAsset font;
-    private TextMeshProUGUI timer;
-    private TextMeshProUGUI lifeStatus;
-    private TextMeshProUGUI resultTitle;
-    private TextMeshProUGUI firstTeam;
-    private TextMeshProUGUI secondTeam;
-    private GameObject resultsPanel;
-    private Button back;
+    public static bool ResultsVisible => Instance != null && Instance.resultsPanel != null && Instance.resultsPanel.activeSelf;
+    [SerializeField] private Canvas matchCanvas;
+    [SerializeField] private GraphicRaycaster uiRaycaster;
+    [SerializeField] private TMP_Text timer;
+    [SerializeField] private TMP_Text lifeStatus;
+    [SerializeField] private TMP_Text resultTitle;
+    [SerializeField] private TMP_Text firstTeam;
+    [SerializeField] private TMP_Text secondTeam;
+    [SerializeField] private GameObject resultsPanel;
+    [SerializeField] private Button back;
+    [SerializeField] private EventSystem sceneEventSystem;
+    [SerializeField] private string menuSceneName = "MainMenuScene";
     private MatchResults displayed;
-    private RectTransform canvasRect;
+    private bool configured;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        if (Instance != null && Instance != this)
+        {
+            if (matchCanvas != null) matchCanvas.enabled = false;
+            if (uiRaycaster != null) uiRaycaster.enabled = false;
+            if (sceneEventSystem != null) sceneEventSystem.enabled = false;
+            Destroy(gameObject);
+            return;
+        }
         Instance = this;
+        configured = ValidateReferences();
+        if (!configured) { enabled = false; return; }
         DontDestroyOnLoad(gameObject);
-        Build();
+        resultsPanel.SetActive(false);
+        timer.text = lifeStatus.text = "";
+        back.interactable = true;
+        back.onClick.AddListener(OnBack);
         SceneManager.sceneLoaded += OnSceneLoaded;
-        EnsureEventSystem();
+        if (MatchResults.LocalFinal != null) ShowFinal();
     }
-    private void EnsureEventSystem()
+
+    private bool ValidateReferences()
     {
-        if (EventSystem.current != null) return;
-        GameObject events = new GameObject("MatchEventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
-        events.GetComponent<InputSystemUIInputModule>().AssignDefaultActions();
-        // Scene-owned: it is removed when returning to the menu's own EventSystem.
+        bool valid = true;
+        valid &= Required(matchCanvas, nameof(matchCanvas));
+        valid &= Required(uiRaycaster, nameof(uiRaycaster));
+        valid &= Required(timer, nameof(timer));
+        valid &= Required(lifeStatus, nameof(lifeStatus));
+        valid &= Required(resultTitle, nameof(resultTitle));
+        valid &= Required(firstTeam, nameof(firstTeam));
+        valid &= Required(secondTeam, nameof(secondTeam));
+        valid &= Required(resultsPanel, nameof(resultsPanel));
+        valid &= Required(back, nameof(back));
+        valid &= Required(sceneEventSystem, nameof(sceneEventSystem));
+        if (transform.parent != null || (matchCanvas != null && matchCanvas.gameObject != gameObject))
+        {
+            Debug.LogError("MatchHud must be attached to the MatchCanvas prefab root, with matchCanvas pointing to its root Canvas.", this);
+            valid = false;
+        }
+        return valid;
     }
+
+    private bool Required(UnityEngine.Object value, string field)
+    {
+        if (value != null) return true;
+        Debug.LogError($"MatchHud on '{name}': missing Inspector reference '{field}'.", this);
+        return false;
+    }
+
     private void Update()
     {
+        if (!configured) return;
         if (MatchResults.LocalFinal != null) { ShowFinal(); return; }
         MatchManager match = MatchManager.Instance;
         NetworkManager network = NetworkManager.Singleton;
@@ -59,11 +98,18 @@ public class MatchHud : MonoBehaviour
                 "Eliminated — Waiting for match results";
         }
     }
+
     public void ShowFinal()
     {
         MatchResults result = MatchResults.LocalFinal;
-        if (result == null) return;
+        if (!configured || result == null) return;
         resultsPanel.SetActive(true);
+        timer.gameObject.SetActive(false);
+        lifeStatus.gameObject.SetActive(false);
+        // The owner's component also checks the retained result at spawn and in
+        // LateUpdate, covering UI setup/activation that happens after this call.
+        var player = NetworkManager.Singleton?.LocalClient?.PlayerObject;
+        if (player != null && player.TryGetComponent<PlayerCanvasController>(out var ui)) ui.RefreshVisibility();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         if (displayed == result) return;
@@ -72,87 +118,32 @@ public class MatchHud : MonoBehaviour
         firstTeam.text = TeamSummary(result, 0);
         secondTeam.text = TeamSummary(result, 1);
     }
-    private static string TeamSummary(MatchResults result, int team)
-    {
-        return (team == 0 ? "Blue team" : "Red team") + "\n\n" + string.Join("\n\n", result.players
+
+    private static string TeamSummary(MatchResults result, int team) =>
+        (team == 0 ? "Blue team" : "Red team") + "\n\n" + string.Join("\n\n", result.players
             .Where(p => p.team == team).Select(p => p.name + (p.disconnected ? " (Disconnected)" : "") +
                 "\nKills: " + p.kills + "    Deaths: " + p.deaths));
-    }
-    private void Build()
-    {
-        GameObject canvasObject = new GameObject("MatchCanvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        canvasObject.transform.SetParent(transform, false);
-        Canvas canvas = canvasObject.GetComponent<Canvas>();
-        canvasRect = canvasObject.GetComponent<RectTransform>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 1000;
-        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        scaler.matchWidthOrHeight = 0.5f;
-        timer = Text("Timer", canvasObject.transform, new Vector2(800, 100), new Vector2(0, -24), 40);
-        timer.rectTransform.anchorMin = timer.rectTransform.anchorMax = timer.rectTransform.pivot = new Vector2(0.5f, 1);
-        lifeStatus = Text("LifeStatus", canvasObject.transform, new Vector2(1400, 100), new Vector2(0, 50), 32);
-        lifeStatus.rectTransform.anchorMin = lifeStatus.rectTransform.anchorMax = lifeStatus.rectTransform.pivot = new Vector2(0.5f, 0);
-        resultsPanel = new GameObject("Results", typeof(RectTransform), typeof(Image));
-        resultsPanel.transform.SetParent(canvasObject.transform, false);
-        RectTransform panelRect = resultsPanel.GetComponent<RectTransform>();
-        panelRect.anchorMin = Vector2.zero; panelRect.anchorMax = Vector2.one;
-        panelRect.offsetMin = panelRect.offsetMax = Vector2.zero;
-        resultsPanel.GetComponent<Image>().color = new Color(0.02f, 0.03f, 0.05f, 0.97f);
-        resultTitle = Text("Result", resultsPanel.transform, new Vector2(1200, 120), new Vector2(0, 330), 50);
-        resultTitle.rectTransform.anchorMin = resultTitle.rectTransform.anchorMax = resultTitle.rectTransform.pivot = new Vector2(0.5f, 1f);
-        resultTitle.rectTransform.anchoredPosition = new Vector2(0, -64);
-        firstTeam = Text("BlueResults", resultsPanel.transform, new Vector2(600, 440), new Vector2(-330, 0), 32);
-        secondTeam = Text("RedResults", resultsPanel.transform, new Vector2(600, 440), new Vector2(330, 0), 32);
-        firstTeam.alignment = secondTeam.alignment = TextAlignmentOptions.TopLeft;
-        GameObject button = new GameObject("Back", typeof(RectTransform), typeof(Image), typeof(Button));
-        button.transform.SetParent(resultsPanel.transform, false);
-        var rect = button.GetComponent<RectTransform>();
-        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0f);
-        rect.sizeDelta = new Vector2(320, 80); rect.anchoredPosition = new Vector2(0, 64);
-        button.GetComponent<Image>().color = new Color(0.12f, 0.28f, 0.45f);
-        Text("Label", button.transform, rect.sizeDelta, Vector2.zero, 32).text = "Back";
-        back = button.GetComponent<Button>(); back.onClick.AddListener(OnBack);
-        resultsPanel.SetActive(false);
-    }
-    private TextMeshProUGUI Text(string name, Transform parent, Vector2 size, Vector2 position, int fontSize)
-    {
-        GameObject obj = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
-        obj.transform.SetParent(parent, false);
-        var text = obj.GetComponent<TextMeshProUGUI>();
-        text.font = font != null ? font : TMP_Settings.defaultFontAsset;
-        text.fontSize = fontSize; text.color = Color.white;
-        text.richText = false; text.raycastTarget = false;
-        text.alignment = TextAlignmentOptions.Center;
-        text.enableAutoSizing = true; text.fontSizeMin = 20; text.fontSizeMax = fontSize;
-        text.rectTransform.sizeDelta = size; text.rectTransform.anchoredPosition = position;
-        text.text = "";
-        return text;
-    }
+
     private void OnBack()
     {
-        if (MatchConnectionCoordinator.Instance == null) return;
+        if (MatchConnectionCoordinator.Instance == null)
+        {
+            Debug.LogError("MatchHud: missing MatchConnectionCoordinator; cannot return to the menu.", this);
+            return;
+        }
         back.interactable = false;
         MatchConnectionCoordinator.Instance.ReturnFromResults();
     }
-    private void LateUpdate()
-    {
-        if (canvasRect == null) return;
-        float width = Mathf.Max(1f, canvasRect.rect.width - 96f);
-        float columnsWidth = Mathf.Min(1300f, width);
-        timer.rectTransform.sizeDelta = new Vector2(Mathf.Min(800f, width), 100f);
-        lifeStatus.rectTransform.sizeDelta = new Vector2(width, 100f);
-        resultTitle.rectTransform.sizeDelta = new Vector2(Mathf.Min(1200f, width), 120f);
-        Vector2 columnSize = new Vector2(Mathf.Max(1f, columnsWidth * 0.5f - 24f), Mathf.Clamp(canvasRect.rect.height - 400f, 160f, 440f));
-        firstTeam.rectTransform.sizeDelta = secondTeam.rectTransform.sizeDelta = columnSize;
-        firstTeam.rectTransform.anchoredPosition = new Vector2(-columnsWidth * 0.25f, 0);
-        secondTeam.rectTransform.anchoredPosition = new Vector2(columnsWidth * 0.25f, 0);
-    }
+
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        if (scene.name == "MainMenuScene") Destroy(gameObject);
+        if (scene.name != menuSceneName) return;
+        matchCanvas.enabled = false;
+        uiRaycaster.enabled = false;
+        sceneEventSystem.enabled = false;
+        Destroy(gameObject);
     }
+
     private void OnDestroy()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;

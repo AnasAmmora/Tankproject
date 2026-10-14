@@ -28,6 +28,12 @@ public class PlayerIdentityManager : MonoBehaviour
 
     private void Start()
     {
+        if (nameInputField == null || startGameButton == null || statusText == null)
+        {
+            Debug.LogError($"PlayerIdentityManager on '{name}': missing Inspector reference '{(nameInputField == null ? nameof(nameInputField) : startGameButton == null ? nameof(startGameButton) : nameof(statusText))}'.", this);
+            enabled = false;
+            return;
+        }
         if (PlayerPrefs.HasKey(PLAYER_NAME_KEY))
         {
             string savedName = PlayerPrefs.GetString(PLAYER_NAME_KEY);
