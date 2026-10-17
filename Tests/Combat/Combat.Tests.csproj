@@ -1,0 +1,31 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(TEMP)/TankProjectCombat/obj/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(TEMP)/TankProjectCombat/obj/</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BaseOutputPath>$(TEMP)/TankProjectCombat/bin/</BaseOutputPath>
+    <DefineConstants>UI_FLOW_TESTS;COMBAT_TESTS</DefineConstants>
+    <NoWarn>$(NoWarn);0649;0067;9113</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" /><Compile Include="../LobbyFlow/Fakes.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MainMenu/LobbyManager.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MainMenu/MatchConnectionCoordinator.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MainMenu/MatchParticipantRoster.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MainMenu/LoadingScreenController.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MatchManager.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/Player/PlayerHealth.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/Player/ShotPresentation.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/Player/ConfirmedHitVisualPrediction.cs" />
+    <Compile Include="PresentationTests.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/TeamBase.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/CombatFeedback.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MatchRules.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/MatchResults.cs" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

@@ -3548,7 +3548,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 93640355
+  GlobalObjectIdHash: 4181086163
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -3654,13 +3654,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   ShowTopMostFoldoutHeaderGroup: 1
-  moveSpeed: 1.5
+  moveSpeed: 5
   rotationSpeed: 60
   driveAcceleration: 12
   visualModel: {fileID: 776674280186094575}
   anticipateConfirmedHits: 1
   maxVisualOffset: 0.5
   visualReconcileTime: 0.15
+  presentationTeleportDistance: 2
 --- !u!114 &3141899042598791565
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3682,6 +3683,8 @@ MonoBehaviour:
   headRotationSpeed: 300
   invertTurretRotation: 0
   aimOffset: 0
+  remoteYawSmoothTime: 0.05
+  presentationTeleportDistance: 2
   netTurretYaw:
     UpdateTraits:
       MinSecondsBetweenUpdates: 0

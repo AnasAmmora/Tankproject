@@ -30,13 +30,11 @@ public class TankCameraShake : MonoBehaviour
 
     public void ShakeOnFire()
     {
-        Debug.Log($"[TankCameraShake] Fire shake, force = {fireForce}");
         impulseSource.GenerateImpulse(fireForce);
     }
 
     public void ShakeOnHit()
     {
-        Debug.Log($"[TankCameraShake] Hit shake, force = {hitForce}");
         impulseSource.GenerateImpulse(hitForce);
     }
 }

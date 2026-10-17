@@ -53,6 +53,7 @@ public class PlayerHealth : NetworkBehaviour
         for (int i = 0; i < colliders.Length; i++) if (colliders[i] != null) colliders[i].enabled = !dead && colliderDefaults[i];
         for (int i = 0; i < renderers.Length; i++) if (renderers[i] != null) renderers[i].enabled = !dead && rendererDefaults[i];
         GetComponent<PlayerMovement>()?.ClearLifeMotion();
+        GetComponent<PlayerLook>()?.ResetPresentation();
     }
     public void BeginReturn(Vector3 position, Quaternion rotation, uint life)
     {

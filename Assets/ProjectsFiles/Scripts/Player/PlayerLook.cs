@@ -3,6 +3,7 @@ using Unity.Netcode;
 using UnityEngine;
 
 [RequireComponent(typeof(TankInputHandler))]
+[DefaultExecutionOrder(100)] // Present world-space turret rotation after the body's presentation.
 public class PlayerLook : NetworkBehaviour
 {
     public bool LocalCameraReady { get; private set; }
@@ -23,6 +24,13 @@ public class PlayerLook : NetworkBehaviour
     public float headRotationSpeed = 150f;
     public bool invertTurretRotation = false;
     public float aimOffset = 0f;
+    [SerializeField, Min(0.001f)] private float remoteYawSmoothTime = 0.05f;
+    [SerializeField, Min(0.1f)] private float presentationTeleportDistance = 2f;
+    private float displayedTurretYaw;
+    private float displayedYawVelocity;
+    private Vector3 previousPresentationPosition;
+    private PlayerHealth health;
+    private bool snapNextReceivedYaw;
 
     private float cameraPitch;
     private float cameraYaw;
@@ -41,6 +49,8 @@ public class PlayerLook : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         LocalCameraReady = false;
+        health = GetComponent<PlayerHealth>();
+        netTurretYaw.OnValueChanged += OnTurretYawChanged;
         if (!IsOwner)
         {
             if (cameraTarget != null)
@@ -56,6 +66,7 @@ public class PlayerLook : NetworkBehaviour
             }
 
             localTurretYaw = referenceYaw;
+            ResetPresentation();
             return;
         }
 
@@ -79,6 +90,7 @@ public class PlayerLook : NetworkBehaviour
             netTurretYaw.Value = referenceYaw;
             localTurretYaw = referenceYaw;
         }
+        ResetPresentation();
     }
 
     private System.Collections.IEnumerator SetupCameraRoutine()
@@ -119,12 +131,49 @@ public class PlayerLook : NetworkBehaviour
             CalculateTurretAim();
         }
 
+        // Keep owner aiming immediate; only replica presentation is smoothed.
+        if (IsOwner) ApplyTurretRotation();
+    }
+
+    private void LateUpdate()
+    {
+        if (!IsSpawned) return;
+        if (!IsOwner)
+        {
+            if ((transform.position - previousPresentationPosition).sqrMagnitude >
+                presentationTeleportDistance * presentationTeleportDistance || (health != null && health.isDead.Value))
+                ResetPresentation();
+            else
+                displayedTurretYaw = Mathf.SmoothDampAngle(displayedTurretYaw, netTurretYaw.Value,
+                    ref displayedYawVelocity, remoteYawSmoothTime, Mathf.Infinity, Time.deltaTime);
+        }
+        previousPresentationPosition = transform.position;
         ApplyTurretRotation();
+    }
+
+    // Life changes and explicit relocation clear presentation history, never aim data.
+    public void ResetPresentation()
+    {
+        displayedTurretYaw = IsOwner ? localTurretYaw : netTurretYaw.Value;
+        displayedYawVelocity = 0f;
+        previousPresentationPosition = transform.position;
+        snapNextReceivedYaw = !IsOwner;
+    }
+
+    private void OnTurretYawChanged(float previous, float current)
+    {
+        // Life/teleport state can arrive before the owner's new yaw. Snap that first
+        // sample as well, instead of interpolating out of the previous life.
+        if (IsOwner || !snapNextReceivedYaw) return;
+        displayedTurretYaw = current;
+        displayedYawVelocity = 0f;
+        snapNextReceivedYaw = false;
     }
 
     public override void OnNetworkDespawn()
     {
         LocalCameraReady = false;
+        netTurretYaw.OnValueChanged -= OnTurretYawChanged;
         StopAllCoroutines();
     }
 
@@ -136,6 +185,7 @@ public class PlayerLook : NetworkBehaviour
         if (cameraTarget != null) cameraTarget.rotation = Quaternion.Euler(0f, cameraYaw, 0f);
         localTurretYaw = cameraYaw;
         netTurretYaw.Value = localTurretYaw;
+        ResetPresentation();
         LocalCameraReady = false;
         StartCoroutine(SetupCameraRoutine());
     }
@@ -165,7 +215,7 @@ public class PlayerLook : NetworkBehaviour
     {
         if (tankHead == null) return;
 
-        float currentYaw = IsOwner ? localTurretYaw : netTurretYaw.Value;
+        float currentYaw = IsOwner ? localTurretYaw : displayedTurretYaw;
 
         float delta = Mathf.DeltaAngle(referenceYaw, currentYaw);
         if (invertTurretRotation) delta = -delta;

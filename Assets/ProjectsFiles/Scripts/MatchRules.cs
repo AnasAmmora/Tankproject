@@ -26,6 +26,7 @@ public sealed class MatchRules
     public double EndsAt { get; private set; }
     public int DestroyedBases { get; private set; }
     public int Winner { get; private set; } = -2; // -1 draw, 0/1 team, -2 undecided.
+    public uint StatisticsRevision { get; private set; }
     public bool Running => Phase == Stage.Regulation || Phase == Stage.Overtime;
     public static bool IsEnemy(int attackerTeam, int victimTeam) => attackerTeam >= 0 && attackerTeam < 2 &&
         victimTeam >= 0 && victimTeam < 2 && attackerTeam != victimTeam;
@@ -37,6 +38,7 @@ public sealed class MatchRules
         if (Phase != Stage.Preparing || Players.ContainsKey(clientId) || team < 0 || team > 1 || ordinal < 0 || ordinal > 3)
             throw new InvalidOperationException("Invalid, duplicate or late player registration.");
         Players.Add(clientId, new PlayerRecord { clientId = clientId, objectId = objectId, name = name, team = team, ordinal = ordinal });
+        StatisticsRevision++;
     }
     public void Start(double now, double duration)
     {
@@ -54,6 +56,7 @@ public sealed class MatchRules
         p.relocating = false;
         var attacker = Players.Values.FirstOrDefault(a => a.objectId == attackerObject);
         if (attacker != null && IsEnemy(attacker.team, p.team)) attacker.kills++;
+        StatisticsRevision++;
         return true;
     }
     public bool DestroyBase(int team)
@@ -66,11 +69,12 @@ public sealed class MatchRules
     public void Disconnect(ulong clientId)
     {
         if (Phase == Stage.Finished) return;
-        if (!Players.TryGetValue(clientId, out var p)) return;
+        if (!Players.TryGetValue(clientId, out var p) || p.disconnected) return;
         p.disconnected = true;
         p.alive = false;
         p.respawnAt = -1;
         p.relocating = false;
+        StatisticsRevision++;
     }
     public bool ConfirmReturn(ulong clientId, uint life, double now)
     {
@@ -79,12 +83,20 @@ public sealed class MatchRules
         p.alive = true;
         p.respawnAt = -1;
         p.relocating = false;
+        StatisticsRevision++;
         return true;
+    }
+    public void BeginReturn(ulong clientId)
+    {
+        if (!Players.TryGetValue(clientId, out var p) || p.relocating || p.alive || !CanReturn(p)) return;
+        p.relocating = true;
+        StatisticsRevision++;
     }
     private void CancelInvalidReturns()
     {
         foreach (var p in Players.Values)
-            if (!CanReturn(p)) { p.respawnAt = -1; p.relocating = false; }
+            if (!CanReturn(p) && (p.respawnAt != -1 || p.relocating))
+            { p.respawnAt = -1; p.relocating = false; StatisticsRevision++; }
     }
     public bool TeamCanContinue(int team) => Players.Values.Any(p => p.team == team && !p.disconnected &&
         (p.alive || (CanReturn(p) && p.respawnAt >= 0)));
@@ -108,6 +120,7 @@ public sealed class MatchRules
     {
         if (Phase == Stage.Finished) return;
         Winner = winner;
+        StatisticsRevision++;
         Phase = Stage.Finished;
         CancelInvalidReturns();
     }

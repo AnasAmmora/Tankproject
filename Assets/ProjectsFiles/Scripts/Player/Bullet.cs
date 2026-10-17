@@ -17,10 +17,11 @@ public class Bullet : MonoBehaviour
     [SerializeField] private GameObject impactEffectPrefab;
     [SerializeField] private float effectDestroyTime = 2f;
     public GameObject ImpactEffectPrefab => impactEffectPrefab;
+    public float EffectLifetime => effectDestroyTime;
 
     private Rigidbody rb;
     private Collider col;
-    private TankCameraShake ownerShake;
+    private ShotPresentation presentation;
     private Collider[] ignoredColliders;
     private int attackerTeam = -1;
     private bool launched;
@@ -40,11 +41,11 @@ public class Bullet : MonoBehaviour
         rb.useGravity = true;
     }
 
-    public void Launch(Vector3 direction, Collider[] ownerColliders, TankCameraShake shake, int teamIndex,
+    public void Launch(Vector3 direction, Collider[] ownerColliders, int teamIndex,
         ulong sourceId, uint sourceShotId, bool trace)
     {
-        CancelInvoke(nameof(DestroyBullet));
-        ownerShake = shake;
+        CancelInvoke(nameof(Expire));
+        presentation = MatchManager.Instance?.Projectiles;
         attackerTeam = teamIndex;
         shooterId = sourceId;
         shotId = sourceShotId;
@@ -58,7 +59,8 @@ public class Bullet : MonoBehaviour
         rb.rotation = transform.rotation;
         rb.linearVelocity = direction.normalized * speed + Vector3.up * launchUpwardForce;
         rb.angularVelocity = Vector3.zero;
-        Invoke(nameof(DestroyBullet), maxLifetime);
+        presentation?.Attach(shooterId, shotId, this);
+        if (launched) Invoke(nameof(Expire), maxLifetime);
     }
 
     private bool CanHit(Collider other)
@@ -89,13 +91,16 @@ public class Bullet : MonoBehaviour
         if (displacement.sqrMagnitude < 0.000001f) return;
         RaycastHit[] hits = rb.SweepTestAll(displacement.normalized, displacement.magnitude,
             QueryTriggerInteraction.Ignore);
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        float nearest = float.PositiveInfinity;
+        RaycastHit closest = default;
         foreach (RaycastHit hit in hits)
         {
-            if (!CanHit(hit.collider)) continue;
-            HandleImpact(hit.collider, hit.point, hit.normal, velocity);
-            break;
+            if (hit.distance >= nearest || !CanHit(hit.collider)) continue;
+            nearest = hit.distance;
+            closest = hit;
         }
+        if (nearest < float.PositiveInfinity)
+            HandleImpact(closest.collider, closest.point, closest.normal, velocity);
     }
 
     private void OnTriggerEnter(Collider other)
@@ -120,36 +125,37 @@ public class Bullet : MonoBehaviour
         }
         impactHandled = true;
         col.enabled = false;
-        if (ownerShake != null) ownerShake.ShakeOnHit();
         PlayerMovement tank = other.GetComponentInParent<PlayerMovement>();
         TankShooter.TraceShot(diagnostics, shooterId, shotId,
             tank != null ? tank.NetworkObjectId : ulong.MaxValue, "projectile-contact");
 
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
         {
+            if (!match.TryResolveProjectile(shooterId, shotId)) { DestroyBullet(); return; }
             PlayerHealth health = other.GetComponentInParent<PlayerHealth>();
             bool acceptedPlayerHit = health != null && health.TakeDamage(damageAmount, attackerTeam, shooterId, sourcePosition);
             TeamBase teamBase = other.GetComponentInParent<TeamBase>();
             if (teamBase != null) teamBase.TakeDamage(damageAmount, attackerTeam, shooterId);
             if (acceptedPlayerHit && !health.isDead.Value && tank != null) tank.ApplyHitImpulse(velocity.normalized * impactForce,
                 shooterId, shotId, diagnostics);
+            NetworkObject target = other.GetComponentInParent<NetworkObject>();
+            // The local RPC also releases this instance. Do not read its fields afterwards.
+            match.PublishProjectileResult(shooterId, shotId, target != null ? target.NetworkObjectId : ulong.MaxValue,
+                true, point, normal, diagnostics);
+            return;
         }
-
-        if (impactEffectPrefab != null)
-        {
-            Quaternion rotation = normal.sqrMagnitude > 0f ? Quaternion.LookRotation(normal) : Quaternion.identity;
-            GameObject effect = Instantiate(impactEffectPrefab, point, rotation);
-            Destroy(effect, effectDestroyTime);
-        }
+        // A cosmetic contact hides this flight only. It is not an explosion, hit
+        // confirmation or force. The match-scoped record survives pool reuse.
         DestroyBullet();
     }
 
     private void OnDisable()
     {
-        CancelInvoke(nameof(DestroyBullet));
+        CancelInvoke(nameof(Expire));
+        presentation?.Detach(shooterId, shotId, this);
+        presentation = null;
         launched = false;
         ignoredColliders = null;
-        ownerShake = null;
         attackerTeam = -1;
         shooterId = ulong.MaxValue;
         shotId = 0;
@@ -158,11 +164,30 @@ public class Bullet : MonoBehaviour
 
     private void DestroyBullet()
     {
-        CancelInvoke(nameof(DestroyBullet));
+        if (!launched) return;
+        CancelInvoke(nameof(Expire));
         launched = false;
         impactHandled = true;
         col.enabled = false;
         // Release also destroys instances that were not obtained from a pool.
         PoolManager.Release(gameObject);
+    }
+
+    public void ReleaseIfShot(ulong source, uint sequence)
+    {
+        if (launched && shooterId == source && shotId == sequence) DestroyBullet();
+    }
+
+    private void Expire()
+    {
+        if (!launched) return;
+        MatchManager match = MatchManager.Instance;
+        if (match != null && match.TryResolveProjectile(shooterId, shotId))
+        {
+            match.PublishProjectileResult(shooterId, shotId, ulong.MaxValue, false,
+                rb.position, Vector3.zero, diagnostics);
+            return;
+        }
+        DestroyBullet();
     }
 }

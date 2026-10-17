@@ -17,6 +17,7 @@ public class PlayerMovement : NetworkBehaviour
     [SerializeField] private bool anticipateConfirmedHits = true;
     [SerializeField, Min(0f)] private float maxVisualOffset = 0.5f;
     [SerializeField, Min(0.01f)] private float visualReconcileTime = 0.15f;
+    [SerializeField, Min(0.1f)] private float presentationTeleportDistance = 2f;
     private Rigidbody rb;
     private TankInputHandler inputHandler;
     private Vector3 pendingImpulse;
@@ -116,7 +117,8 @@ public class PlayerMovement : NetworkBehaviour
         awaitingAuthorityState = awaitingDisplayedMovement = diagnostics;
         if (anticipateConfirmedHits && visualModel != null)
         {
-            visualPrediction.Begin(transform.position, observedRootVelocity, impulse / rb.mass, visualLead);
+            visualPrediction.Begin(transform.position, observedRootVelocity, impulse / rb.mass, visualLead,
+                transform.forward, moveSpeed);
             visualStartLogged = false;
             TraceHit(trace, "confirmed-visual-scheduled");
         }
@@ -165,6 +167,13 @@ public class PlayerMovement : NetworkBehaviour
     private void LateUpdate()
     {
         if (!IsSpawned) return;
+        if ((transform.position - previousRootPosition).sqrMagnitude >
+            presentationTeleportDistance * presentationTeleportDistance)
+        {
+            ResetPresentation();
+            awaitingAuthorityState = awaitingDisplayedMovement = false;
+            GetComponent<PlayerLook>()?.ResetPresentation();
+        }
         float dt = Time.deltaTime;
         if (dt > 0f)
         {
@@ -188,7 +197,7 @@ public class PlayerMovement : NetworkBehaviour
         }
         if (visualModel == null || !visualPrediction.IsActive) return;
         Vector3 offset = visualPrediction.Tick(transform.position, driveAcceleration, dt,
-            maxVisualOffset, visualReconcileTime);
+            maxVisualOffset, visualReconcileTime, transform.forward);
         Vector3 permittedOffset = LimitVisualOffset(offset);
         if ((permittedOffset - offset).sqrMagnitude > 0.000001f)
         {
@@ -250,6 +259,8 @@ public class PlayerMovement : NetworkBehaviour
         rb.position = position;
         rb.rotation = rotation;
         networkTransform.Teleport(position, rotation, transform.localScale);
+        ResetPresentation();
+        GetComponent<PlayerLook>()?.ResetPresentation();
     }
 
     public override void OnNetworkDespawn()

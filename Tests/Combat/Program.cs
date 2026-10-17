@@ -6,7 +6,7 @@ using UnityEngine;
 using Unity.Netcode;
 
 public class MatchHud : Component { public static MatchHud Instance; public void ShowFinal() { } }
-static class Program
+static partial class Program
 {
     const BindingFlags Hidden=BindingFlags.Instance|BindingFlags.NonPublic;
     static int checks;
@@ -67,6 +67,7 @@ static class Program
         Assert(f.feed.Single().AttackerId==1&&f.feed[0].VictimId==0,"Client-to-host feedback uses actual sender/victim client identities");
         f=Fixture(four:true);f.health.TakeDamage(25,0,103,new Vector3(3,0,0));
         Assert(f.feed.Single().AttackerId==3&&f.feed[0].VictimId==1,"Client-to-client damage is confirmed on server with distinct client IDs");
-        Console.WriteLine($"PASS: {checks} authoritative damage/feedback assertions (simulated engine/RPC delivery).");
+        PresentationTests();
+        Console.WriteLine($"PASS: {checks} combat/presentation assertions (simulated engine/RPC delivery).");
     }
 }

@@ -20,7 +20,10 @@ namespace UnityEngine
         public static T FindAnyObjectByType<T>() where T : class => Found.TryGetValue(typeof(T), out var value) ? (T)value : null;
         public static void Destroy(Object obj) { }
         public static void Destroy(Object obj,float delay) { }
-        public static GameObject Instantiate(GameObject original,Vector3 position,Quaternion rotation)=>new("clone");
+        public static int Instantiations;
+        public static Vector3 LastInstantiationPosition;
+        public static GameObject Instantiate(GameObject original,Vector3 position,Quaternion rotation)
+        { Instantiations++; LastInstantiationPosition=position; return new("clone"); }
         public static void DontDestroyOnLoad(Object obj) { }
         public static GameObject Instantiate(GameObject original, Transform parent) => new("clone");
         public static Func<Object, Transform, Object> PrefabFactory;
@@ -85,6 +88,9 @@ namespace UnityEngine
     {
         public float x=x,y=y,z=z;
         public float sqrMagnitude => x*x+y*y+z*z;
+        public float magnitude => MathF.Sqrt(sqrMagnitude);
+        public static Vector3 zero => default;
+        public static Vector3 operator +(Vector3 a,Vector3 b)=>new(a.x+b.x,a.y+b.y,a.z+b.z);
         public Vector3 normalized => sqrMagnitude > 0 ? this / MathF.Sqrt(sqrMagnitude) : default;
         public static Vector3 up => new(0,1,0);
         public static Vector3 operator -(Vector3 a,Vector3 b)=>new(a.x-b.x,a.y-b.y,a.z-b.z);
@@ -94,15 +100,19 @@ namespace UnityEngine
         public static Vector3 Cross(Vector3 a,Vector3 b)=>new(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x);
         public static Vector3 ProjectOnPlane(Vector3 a,Vector3 normal)=>a-normal*Dot(a,normal);
         public static float Distance(Vector3 a,Vector3 b)=>MathF.Sqrt((a-b).sqrMagnitude);
+        public static Vector3 MoveTowards(Vector3 a,Vector3 b,float step)=>Distance(a,b)<=step?b:a+(b-a).normalized*step;
     }
     public struct Quaternion
-    { public float z; public static Quaternion identity=>default; public static Quaternion Euler(float x,float y,float z)=>new(){z=z}; public static float Angle(Quaternion a,Quaternion b)=>0; }
+    { public float z; public static Quaternion identity=>default; public static Quaternion LookRotation(Vector3 forward)=>default; public static Quaternion Euler(float x,float y,float z)=>new(){z=z}; public static float Angle(Quaternion a,Quaternion b)=>0; }
     public class Collider : Component { }
     public class Renderer : Component { }
     public static class Mathf
     {
         public const float Rad2Deg = 180f/MathF.PI;
         public static float Clamp01(float value)=>Math.Clamp(value,0,1);
+        public static float Clamp(float value,float min,float max)=>Math.Clamp(value,min,max);
+        public static float Exp(float value)=>MathF.Exp(value);
+        public static float SmoothStep(float a,float b,float t) { t=Clamp01(t); return a+(b-a)*t*t*(3-2*t); }
         public static float Max(float a,float b)=>Math.Max(a,b);
         public static int Max(int a,int b)=>Math.Max(a,b);
         public static float Sin(float value)=>MathF.Sin(value);
@@ -126,7 +136,8 @@ namespace UnityEngine
     public static class JsonUtility
     {
         private static readonly System.Text.Json.JsonSerializerOptions Options = new() { IncludeFields = true };
-        public static string ToJson<T>(T value) => System.Text.Json.JsonSerializer.Serialize(value, Options);
+        public static int SerializationCalls;
+        public static string ToJson<T>(T value) { SerializationCalls++; return System.Text.Json.JsonSerializer.Serialize(value, Options); }
         public static T FromJson<T>(string value) => System.Text.Json.JsonSerializer.Deserialize<T>(value, Options);
     }
 }
@@ -375,6 +386,7 @@ public class PlayerState : UnityEngine.Component
 #if UI_FLOW_TESTS
 public class TankShooter : UnityEngine.Component
 {
+    public static void TraceShot(bool enabled,ulong shooter,uint shot,ulong target,string stage,double confirmedAt=-1,double elapsed=0) { }
     public event Action WeaponStateChanged;
     public float CooldownRemaining, CooldownDuration=.4f, CooldownEndsAt;
     public bool CanFire=true;
@@ -385,7 +397,16 @@ public static class PoolManager { public static void Clear() { } public static v
 #if COMBAT_TESTS
 public class PlayerMovement:UnityEngine.Component
 { public void ClearLifeMotion() { } public void RelocateForReturn(UnityEngine.Vector3 position,UnityEngine.Quaternion rotation) { } }
-public class PlayerLook:UnityEngine.Component { public bool LocalCameraReady=true; public void ResetAfterReturn() { } }
+public class PlayerLook:UnityEngine.Component { public bool LocalCameraReady=true; public void ResetAfterReturn() { } public void ResetPresentation() { } }
+public class TankCameraShake : UnityEngine.Component { public int Hits; public void ShakeOnHit()=>Hits++; }
+// Only the pooled engine object is simulated; ShotPresentation itself is production code.
+public class Bullet : UnityEngine.Component
+{
+    public ulong Shooter; public uint Sequence; public bool Active=true; public int Releases;
+    public Action Disabled;
+    public void ReleaseIfShot(ulong shooter,uint sequence)
+    { if (!Active || Shooter!=shooter || Sequence!=sequence) return; Active=false; Releases++; Disabled?.Invoke(); }
+}
 #endif
 namespace Unity.Collections
 {

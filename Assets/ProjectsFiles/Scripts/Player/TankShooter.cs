@@ -99,9 +99,16 @@ public class TankShooter : NetworkBehaviour
     [ServerRpc]
     private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics)
     {
-        if (!MatchManager.CanControl(GetComponent<PlayerHealth>()) || shotId <= lastServerShot ||
-            NetworkManager.ServerTime.Time + 1d / Mathf.Max(1, NetworkManager.NetworkConfig.TickRate) < nextServerFireAt) return;
+        if (shotId <= lastServerShot) return; // Never reject a duplicate of an already active shot.
         lastServerShot = shotId;
+        if (!MatchManager.CanControl(GetComponent<PlayerHealth>()) ||
+            NetworkManager.ServerTime.Time + 1d / Mathf.Max(1, NetworkManager.NetworkConfig.TickRate) < nextServerFireAt)
+        {
+            MatchManager match = MatchManager.Instance;
+            if (match != null && match.TryResolveProjectile(NetworkObjectId, shotId))
+                match.PublishProjectileResult(NetworkObjectId, shotId, ulong.MaxValue, false, spawnPos, Vector3.zero, diagnostics);
+            return;
+        }
         nextServerFireAt = NetworkManager.ServerTime.Time + fireCooldown;
         TraceShot(diagnostics, NetworkObjectId, shotId, ulong.MaxValue, "server-shot-received");
         if (!IsOwner)
@@ -125,6 +132,15 @@ public class TankShooter : NetworkBehaviour
 
     private void SpawnBulletLocally(Vector3 pos, Vector3 dir, uint shotId, bool? diagnostics = null)
     {
+        MatchManager match = MatchManager.Instance;
+        Bullet definition = bulletPrefab != null ? bulletPrefab.GetComponent<Bullet>() : null;
+        if (match == null || definition == null)
+        {
+            Debug.LogError("TankShooter requires MatchManager and bulletPrefab with Bullet.", this);
+            return;
+        }
+        if (!match.Projectiles.Register(NetworkObjectId, shotId, definition.ImpactEffectPrefab,
+            definition.EffectLifetime, IsOwner ? ownerShake : null)) return;
         Quaternion bulletRotation = Quaternion.LookRotation(dir);
         GameObject bulletInstance = PoolManager.Get(bulletPrefab, pos, bulletRotation);
 
@@ -137,7 +153,7 @@ public class TankShooter : NetworkBehaviour
             }
 
             bool trace = diagnostics ?? logHitTiming;
-            bullet.Launch(dir, ownerColliders, IsOwner ? ownerShake : null, myTeamIndex,
+            bullet.Launch(dir, ownerColliders, myTeamIndex,
                 NetworkObjectId, shotId, trace);
             TraceShot(trace, NetworkObjectId, shotId, ulong.MaxValue, "projectile-launched");
         }
@@ -174,16 +190,17 @@ public class TankShooter : NetworkBehaviour
         Vector3 targetPoint;
 
         RaycastHit[] hits = Physics.RaycastAll(screenCenterRay, aimRayDistance, aimLayerMask, QueryTriggerInteraction.Ignore);
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-
+        float nearest = float.PositiveInfinity;
+        Vector3 nearestPoint = default;
         foreach (var hit in hits)
         {
-            if (!hit.collider.transform.IsChildOf(transform))
+            if (!hit.collider.transform.IsChildOf(transform) && hit.distance < nearest)
             {
-                targetPoint = hit.point;
-                return (targetPoint - muzzlePoint.position).normalized;
+                nearest = hit.distance;
+                nearestPoint = hit.point;
             }
         }
+        if (nearest < float.PositiveInfinity) return (nearestPoint - muzzlePoint.position).normalized;
 
         targetPoint = screenCenterRay.origin + screenCenterRay.direction * aimRayDistance;
         return (targetPoint - muzzlePoint.position).normalized;

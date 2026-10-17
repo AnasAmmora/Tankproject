@@ -21,6 +21,10 @@ public class MatchManager : NetworkBehaviour
     public readonly NetworkVariable<int> winningTeam = new NetworkVariable<int>(-2);
     public readonly NetworkVariable<FixedString4096Bytes> statistics = new NetworkVariable<FixedString4096Bytes>();
     private readonly MatchRules rules = new MatchRules();
+    private uint publishedStatisticsRevision;
+    private bool statisticsPublished;
+    public ShotPresentation Projectiles { get; } = new ShotPresentation();
+    private readonly HashSet<(ulong, uint)> resolvedProjectiles = new HashSet<(ulong, uint)>();
     private readonly HashSet<ulong> finalReceipts = new HashSet<ulong>();
     public bool FinalSnapshotsDelivered => IsServer && NetworkManager.ConnectedClientsIds.All(id => finalReceipts.Contains(id));
     public bool Running => IsSpawned && (phase.Value == (int)MatchRules.Stage.Regulation || phase.Value == (int)MatchRules.Stage.Overtime);
@@ -39,6 +43,9 @@ public class MatchManager : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         Instance = this;
+        Projectiles.Clear();
+        resolvedProjectiles.Clear();
+        statisticsPublished = false;
         feedbackSequence = lastFeedbackSequence = 0;
         coordinator = MatchConnectionCoordinator.Instance;
         MatchConnectionCoordinator.Trace("MatchManager spawned", "rulesPhase=" + rules.Phase);
@@ -189,6 +196,8 @@ public class MatchManager : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
+        Projectiles.Clear();
+        resolvedProjectiles.Clear();
         matchStarted.OnValueChanged -= OnStartedChanged;
         if (NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnDisconnected;
         StopAllCoroutines();
@@ -204,6 +213,26 @@ public class MatchManager : NetworkBehaviour
     }
 
     public bool CanDamage(int attackerTeam, int victimTeam) => IsServer && rules.Running && MatchRules.IsEnemy(attackerTeam, victimTeam);
+
+    // Claim before applying damage or an impulse, not just before displaying FX.
+    public bool TryResolveProjectile(ulong shooter, uint shot) => IsServer && IsSpawned && resolvedProjectiles.Add((shooter, shot));
+
+    public void PublishProjectileResult(ulong shooter, uint shot, ulong target, bool impact,
+        Vector3 point, Vector3 normal, bool diagnostics)
+    {
+        if (!IsServer || !IsSpawned) return;
+        ProjectileResultRpc(shooter, shot, target, impact, point, normal, NetworkManager.ServerTime.Time, diagnostics);
+    }
+
+    [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
+    private void ProjectileResultRpc(ulong shooter, uint shot, ulong target, bool impact,
+        Vector3 point, Vector3 normal, double confirmedAt, bool diagnostics)
+    {
+        if (MatchResults.LocalFinal != null) return;
+        TankShooter.TraceShot(diagnostics, shooter, shot, target,
+            impact ? "projectile-result-impact" : "projectile-result-no-impact", confirmedAt);
+        Projectiles.Resolve(shooter, shot, impact, point, normal);
+    }
 
     public bool TryGetShotTeam(ulong shooterObjectId, out int team)
     {
@@ -285,7 +314,7 @@ public class MatchManager : NetworkBehaviour
             }
             if (!record.relocating && now >= record.respawnAt)
             {
-                record.relocating = true;
+                rules.BeginReturn(record.clientId);
                 health.BeginReturn(spawn.position, spawn.rotation, record.life);
             }
             else if (record.relocating && now > record.respawnAt + 15d)
@@ -321,8 +350,13 @@ public class MatchManager : NetworkBehaviour
         phaseEndsAt.Value = rules.EndsAt;
         destroyedBases.Value = rules.DestroyedBases;
         winningTeam.Value = rules.Winner;
-        string json = JsonUtility.ToJson(new MatchResults { winner = rules.Winner, players = rules.Players.Values.OrderBy(p => p.ordinal).ToArray() });
-        if (statistics.Value.ToString() != json) statistics.Value = new FixedString4096Bytes(json);
+        if (!statisticsPublished || publishedStatisticsRevision != rules.StatisticsRevision)
+        {
+            string json = JsonUtility.ToJson(new MatchResults { winner = rules.Winner, players = rules.Players.Values.OrderBy(p => p.ordinal).ToArray() });
+            statistics.Value = new FixedString4096Bytes(json);
+            publishedStatisticsRevision = rules.StatisticsRevision;
+            statisticsPublished = true;
+        }
         phase.Value = (int)rules.Phase;
     }
 
@@ -330,6 +364,7 @@ public class MatchManager : NetworkBehaviour
     private void FinishRpc(string json)
     {
         MatchResults.Store(json);
+        Projectiles.Clear();
         PoolManager.ReleaseActiveBullets();
         MatchHud.Instance?.ShowFinal();
         FinalReceivedRpc();
