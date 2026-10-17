@@ -31,6 +31,13 @@ public class TankShooter : NetworkBehaviour
     private uint lastServerShot;
     private double nextServerFireAt;
     private bool fireSubscribed;
+    public event System.Action WeaponStateChanged;
+    public float CooldownDuration => fireCooldown;
+    public float CooldownRemaining => Mathf.Max(0f, nextFireTime - Time.time);
+    // Expose the existing deadline so presentation can distinguish completion
+    // from a reset/cancellation without maintaining a second reload timer.
+    public float CooldownEndsAt => nextFireTime;
+    public bool CanFire => IsSpawned && IsOwner && MatchManager.CanControl(GetComponent<PlayerHealth>()) && Time.time >= nextFireTime;
 
     private void Awake()
     {
@@ -41,6 +48,8 @@ public class TankShooter : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         if (!IsOwner) return;
+
+        nextFireTime = Time.time;
 
         if (fireAction != null && !fireSubscribed)
         {
@@ -74,9 +83,9 @@ public class TankShooter : NetworkBehaviour
 
     private void TryFire()
     {
-        if (!IsSpawned || !MatchManager.CanControl(GetComponent<PlayerHealth>())) return;
-        if (Time.time < nextFireTime) return;
+        if (!CanFire) return;
         nextFireTime = Time.time + fireCooldown;
+        WeaponStateChanged?.Invoke();
 
         Vector3 direction = GetAimDirection();
         uint shotId = ++nextShotId;

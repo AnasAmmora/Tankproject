@@ -4,6 +4,7 @@ using UnityEngine;
 [RequireComponent(typeof(PlayerState))]
 public class PlayerHealth : NetworkBehaviour
 {
+    public static event System.Action<PlayerHealth> Spawned;
     [Min(1)] public int maxHealth = 100;
     private PlayerState playerState;
     private Collider[] colliders;
@@ -31,8 +32,9 @@ public class PlayerHealth : NetworkBehaviour
         if (IsServer) { currentHealth.Value = maxHealth; isDead.Value = false; respawnAt.Value = -1; }
         isDead.OnValueChanged += OnDeadChanged;
         ApplyLifePresentation(isDead.Value);
+        Spawned?.Invoke(this);
     }
-    public bool TakeDamage(int damage, int attackerTeam, ulong attackerObject = ulong.MaxValue)
+    public bool TakeDamage(int damage, int attackerTeam, ulong attackerObject = ulong.MaxValue, Vector3? sourcePosition = null)
     {
         if (!IsServer || isDead.Value || damage <= 0 || MatchManager.Instance == null ||
             !MatchManager.Instance.CanDamage(attackerTeam, playerState.teamIndex.Value)) return false;
@@ -40,8 +42,9 @@ public class PlayerHealth : NetworkBehaviour
         if (currentHealth.Value == 0)
         {
             isDead.Value = true;
-            MatchManager.Instance.RecordDeath(this, attackerObject);
+            MatchManager.Instance.RecordDeath(this, attackerObject, sourcePosition);
         }
+        else MatchManager.Instance.NotifyPlayerDamage(this, attackerObject, sourcePosition);
         return true;
     }
     private void OnDeadChanged(bool previous, bool current) => ApplyLifePresentation(current);

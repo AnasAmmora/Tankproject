@@ -22,7 +22,16 @@ public class PlayerCanvasController : NetworkBehaviour
         playerCanvas.gameObject.SetActive(false);
     }
 
-    public override void OnNetworkSpawn() => RefreshVisibility();
+    public override void OnNetworkSpawn()
+    {
+        RefreshVisibility();
+        if (IsOwner)
+        {
+            var presentation = GetComponent<PlayerUI>();
+            if (presentation != null) presentation.OnPlayerSpawned();
+            else Debug.LogError($"PlayerCanvasController on '{name}': missing PlayerUI on the player root. Check the NetworkManager PlayerPrefab asset.", this);
+        }
+    }
 
     public void RefreshVisibility()
     {
@@ -35,6 +44,7 @@ public class PlayerCanvasController : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
+        GetComponent<PlayerUI>()?.OnPlayerDespawned();
         if (configured) playerCanvas.gameObject.SetActive(false);
     }
 }

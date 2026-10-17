@@ -26,6 +26,7 @@ public class MatchHud : MonoBehaviour
     [SerializeField] private Button back;
     [SerializeField] private EventSystem sceneEventSystem;
     [SerializeField] private string menuSceneName = "MainMenuScene";
+    [SerializeField] private GameplayHud gameplayHud;
     private MatchResults displayed;
     private bool configured;
     private readonly Dictionary<ulong, ResultRow> blueEntries = new Dictionary<ulong, ResultRow>();
@@ -70,6 +71,7 @@ public class MatchHud : MonoBehaviour
         valid &= Required(resultsPanel, nameof(resultsPanel));
         valid &= Required(back, nameof(back));
         valid &= Required(sceneEventSystem, nameof(sceneEventSystem));
+        valid &= Required(gameplayHud, nameof(gameplayHud));
         if (transform.parent != null || (matchCanvas != null && matchCanvas.gameObject != gameObject))
         {
             Debug.LogError("MatchHud must be attached to the MatchCanvas prefab root, with matchCanvas pointing to its root Canvas.", this);
@@ -90,22 +92,6 @@ public class MatchHud : MonoBehaviour
         if (!configured) return;
         CaptureLocalIdentity();
         if (MatchResults.LocalFinal != null) { ShowFinal(); return; }
-        MatchManager match = MatchManager.Instance;
-        NetworkManager network = NetworkManager.Singleton;
-        if (match == null || !match.IsSpawned || network == null || !match.Running) return;
-        double seconds = Math.Max(0, Math.Ceiling(match.phaseEndsAt.Value - network.ServerTime.Time));
-        timer.text = (match.phase.Value == (int)MatchRules.Stage.Overtime ? "Overtime  " : "") +
-            ((int)seconds / 60).ToString("00") + ":" + ((int)seconds % 60).ToString("00");
-        var player = network.LocalClient?.PlayerObject;
-        lifeStatus.text = "";
-        if (player != null && player.TryGetComponent<PlayerHealth>(out var health) && health.isDead.Value)
-        {
-            int team = player.GetComponent<PlayerState>().teamIndex.Value;
-            bool permitted = team >= 0 && team < 2 && (match.destroyedBases.Value & (1 << team)) == 0 &&
-                match.phase.Value == (int)MatchRules.Stage.Regulation && health.respawnAt.Value >= 0;
-            lifeStatus.text = permitted ? "Respawn in " + Math.Max(0, Math.Ceiling(health.respawnAt.Value - network.ServerTime.Time)) + "s" :
-                "Eliminated — Waiting for match results";
-        }
     }
 
     public void ShowFinal()
@@ -114,6 +100,7 @@ public class MatchHud : MonoBehaviour
         if (!configured || result == null) return;
         CaptureLocalIdentity();
         resultsPanel.SetActive(true);
+        gameplayHud.HideForResults();
         timer.gameObject.SetActive(false);
         lifeStatus.gameObject.SetActive(false);
         // The owner's component also checks the retained result at spawn and in

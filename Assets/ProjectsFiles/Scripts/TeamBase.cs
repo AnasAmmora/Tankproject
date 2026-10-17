@@ -23,11 +23,12 @@ public class TeamBase : NetworkBehaviour
     }
     private void HealthChanged(int previous, int current) => OnHealthChanged?.Invoke(current, maxHealth);
     private void DestroyedChanged(bool previous, bool current) { if (current) TriggerDestructionEffects(); }
-    public bool TakeDamage(int damage, int attackerTeam)
+    public bool TakeDamage(int damage, int attackerTeam, ulong attackerObject = ulong.MaxValue)
     {
         if (!IsServer || isDestroyed.Value || damage <= 0 || MatchManager.Instance == null ||
             !MatchManager.Instance.CanDamage(attackerTeam, teamIndex)) return false;
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - damage);
+        MatchManager.Instance.NotifyBaseDamage(teamIndex, attackerObject);
         if (currentHealth.Value == 0) DestroyOnServer();
         return true;
     }

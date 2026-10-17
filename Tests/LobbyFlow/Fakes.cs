@@ -11,6 +11,7 @@ namespace UnityEngine
     public class SerializeField : Attribute { }
     public class HeaderAttribute(string text) : Attribute { }
     public class MinAttribute(float value) : Attribute { }
+    public class RangeAttribute(float min, float max) : Attribute { }
     public class RequireComponent(Type type) : Attribute { }
     public class Object
     {
@@ -18,6 +19,8 @@ namespace UnityEngine
         public static readonly Dictionary<Type, object> Found = new();
         public static T FindAnyObjectByType<T>() where T : class => Found.TryGetValue(typeof(T), out var value) ? (T)value : null;
         public static void Destroy(Object obj) { }
+        public static void Destroy(Object obj,float delay) { }
+        public static GameObject Instantiate(GameObject original,Vector3 position,Quaternion rotation)=>new("clone");
         public static void DontDestroyOnLoad(Object obj) { }
         public static GameObject Instantiate(GameObject original, Transform parent) => new("clone");
         public static Func<Object, Transform, Object> PrefabFactory;
@@ -37,11 +40,16 @@ namespace UnityEngine
     public class MonoBehaviour : Component
     {
         public readonly List<IEnumerator> Routines = new();
-        public object StartCoroutine(IEnumerator routine) { Routines.Add(routine); return routine; }
+        public Coroutine StartCoroutine(IEnumerator routine) { Routines.Add(routine); return new Coroutine{Routine=routine}; }
+        public void StopCoroutine(Coroutine routine)=>Routines.Remove(routine.Routine);
+        public void StopAllCoroutines()=>Routines.Clear();
     }
+    public class Coroutine { public IEnumerator Routine; }
     public class GameObject : Object
     {
+        public SceneManagement.Scene scene;
         public bool activeSelf = true;
+        public bool activeInHierarchy => activeSelf && (transform.parent == null || transform.parent.gameObject.activeInHierarchy);
         public Transform transform;
         private readonly Dictionary<Type, Component> components = new();
         public GameObject(string name = "", params Type[] types)
@@ -58,6 +66,10 @@ namespace UnityEngine
     }
     public class Transform : Component, IEnumerable<Transform>
     {
+        public Vector3 position, forward = new(0,0,1);
+        public Vector3 localScale = new(1,1,1);
+        public Quaternion rotation;
+        public Quaternion localRotation;
         public Transform parent;
         public bool IsChildOf(Transform value) => parent == value || (parent != null && parent.IsChildOf(value));
         public void SetParent(Transform value, bool stay) { parent = value; }
@@ -67,12 +79,43 @@ namespace UnityEngine
     }
     public class RectTransform : Transform { public Vector2 anchorMin, anchorMax, pivot, sizeDelta, anchoredPosition; }
     public struct Vector2(float x, float y) { }
-    public struct Color { public static Color white => default; }
+    public struct Color(float red, float green, float blue, float alpha = 1)
+    { public float r = red, g = green, b = blue, a = alpha; public static Color white => new(1,1,1); }
+    public struct Vector3(float x, float y, float z)
+    {
+        public float x=x,y=y,z=z;
+        public float sqrMagnitude => x*x+y*y+z*z;
+        public Vector3 normalized => sqrMagnitude > 0 ? this / MathF.Sqrt(sqrMagnitude) : default;
+        public static Vector3 up => new(0,1,0);
+        public static Vector3 operator -(Vector3 a,Vector3 b)=>new(a.x-b.x,a.y-b.y,a.z-b.z);
+        public static Vector3 operator /(Vector3 a,float b)=>new(a.x/b,a.y/b,a.z/b);
+        public static Vector3 operator *(Vector3 a,float b)=>new(a.x*b,a.y*b,a.z*b);
+        public static float Dot(Vector3 a,Vector3 b)=>a.x*b.x+a.y*b.y+a.z*b.z;
+        public static Vector3 Cross(Vector3 a,Vector3 b)=>new(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x);
+        public static Vector3 ProjectOnPlane(Vector3 a,Vector3 normal)=>a-normal*Dot(a,normal);
+        public static float Distance(Vector3 a,Vector3 b)=>MathF.Sqrt((a-b).sqrMagnitude);
+    }
+    public struct Quaternion
+    { public float z; public static Quaternion identity=>default; public static Quaternion Euler(float x,float y,float z)=>new(){z=z}; public static float Angle(Quaternion a,Quaternion b)=>0; }
+    public class Collider : Component { }
+    public class Renderer : Component { }
+    public static class Mathf
+    {
+        public const float Rad2Deg = 180f/MathF.PI;
+        public static float Clamp01(float value)=>Math.Clamp(value,0,1);
+        public static float Max(float a,float b)=>Math.Max(a,b);
+        public static int Max(int a,int b)=>Math.Max(a,b);
+        public static float Sin(float value)=>MathF.Sin(value);
+        public static float Atan2(float a,float b)=>MathF.Atan2(a,b);
+        public static float MoveTowards(float a,float b,float step)=>a < b ? Math.Min(b,a+step) : Math.Max(b,a-step);
+    }
+    public class CanvasGroup : Component { public float alpha; }
+    public class Camera : Component { public static Camera main; }
     public class Canvas : Component { }
     public class AsyncOperation { public bool isDone = true; }
     public enum CursorLockMode { None, Locked }
     public static class Cursor { public static CursorLockMode lockState; public static bool visible; }
-    public static class Time { public static float unscaledDeltaTime = 0.02f; public static double realtimeSinceStartupAsDouble; }
+    public static class Time { public static float unscaledDeltaTime = 0.02f, unscaledTime, time; public static double realtimeSinceStartupAsDouble; }
     public static class Debug
     {
         public static readonly List<string> Messages = new();
@@ -99,10 +142,12 @@ namespace UnityEngine.SceneManagement
         public static Scene GetSceneByName(string name) => new() { name = name, isLoaded = Active == name };
         public static UnityEngine.AsyncOperation LoadSceneAsync(string name, LoadSceneMode mode)
         { Active = name; sceneLoaded?.Invoke(GetActiveScene(), mode); return new(); }
+        public static void MoveGameObjectToScene(UnityEngine.GameObject obj,Scene scene)=>obj.scene=scene;
     }
 }
 namespace UnityEngine.UI
 {
+    public class Image : UnityEngine.Component { public float fillAmount; public UnityEngine.Color color; }
     public class GraphicRaycaster : UnityEngine.Component { }
     public class Button : UnityEngine.Component
     {
@@ -213,12 +258,23 @@ namespace Unity.Netcode
 {
     public class NetworkBehaviour : UnityEngine.MonoBehaviour
     {
+        public NetworkManager NetworkManager=>NetworkManager.Singleton;
+        public bool IsServer,IsClient;
+        public ulong NetworkObjectId;
         public bool IsOwner, IsSpawned;
+        public ulong OwnerClientId;
         public virtual void OnNetworkSpawn() { }
         public virtual void OnNetworkDespawn() { }
     }
-    public class NetworkObject : UnityEngine.Component { }
-    public class NetworkVariable<T>(T value) { public T Value = value; }
+    public class NetworkObject : UnityEngine.Component
+    { public ulong NetworkObjectId; public bool IsSpawned,IsPlayerObject; public void SpawnAsPlayerObject(ulong id,bool destroy)=>IsSpawned=IsPlayerObject=true; }
+    public class NetworkVariable<T>(T value=default)
+    {
+        private T storage=value;
+        public event Action<T,T> OnValueChanged;
+        public int SubscriberCount=>OnValueChanged?.GetInvocationList().Length??0;
+        public T Value { get=>storage; set { T old=storage; storage=value; if(!EqualityComparer<T>.Default.Equals(old,value)) OnValueChanged?.Invoke(old,value); } }
+    }
     public enum SceneEventProgressStatus { Started, SceneFailedVerification }
     public enum SceneEventType { Synchronize, Load, LoadComplete, SynchronizeComplete, LoadEventCompleted }
     public class SceneEvent { public SceneEventType SceneEventType; public string SceneName; public ulong ClientId; public List<ulong> ClientsThatTimedOut; }
@@ -228,9 +284,16 @@ namespace Unity.Netcode
         public SceneEventProgressStatus Result = SceneEventProgressStatus.Started;
         public SceneEventProgressStatus LoadScene(string scene, UnityEngine.SceneManagement.LoadSceneMode mode) => Result;
     }
-    public class NetworkConfig { public bool ConnectionApproval, AutoSpawnPlayerPrefabClientSide; public byte[] ConnectionData; }
+    public enum SendTo { Everyone,Server,Owner }
+    public enum RpcInvokePermission { Server,Owner,Everyone }
+    public class RpcAttribute(SendTo target):Attribute { public RpcInvokePermission InvokePermission; }
+    public struct RpcParams { public struct Received { public ulong SenderClientId; } public Received Receive; }
+    public class NetworkConfig { public UnityEngine.GameObject PlayerPrefab; public bool ConnectionApproval, AutoSpawnPlayerPrefabClientSide; public byte[] ConnectionData; }
     public class NetworkManager : UnityEngine.MonoBehaviour
     {
+        public class Spawner
+        { public Dictionary<ulong,NetworkObject> Players=new(); public HashSet<NetworkObject> SpawnedObjectsList=new(); public NetworkObject GetPlayerNetworkObject(ulong id)=>Players.GetValueOrDefault(id); }
+        public Spawner SpawnManager = new();
         public static NetworkManager Singleton;
         public class Client { public NetworkObject PlayerObject; }
         public class Clock { public double Time; }
@@ -241,6 +304,8 @@ namespace Unity.Netcode
         public int ShutdownCalls; public string DisconnectReason;
         public NetworkConfig NetworkConfig = new(); public NetworkSceneManager SceneManager = new();
         public Dictionary<ulong, object> ConnectedClients = new();
+        public IEnumerable<ulong> ConnectedClientsIds=>ConnectedClients.Keys;
+        public void DisconnectClient(ulong id,string reason)=>ConnectedClients.Remove(id);
         public event Action<ulong> OnClientDisconnectCallback;
         public event Action OnTransportFailure;
         public event Action<ConnectionApprovalRequest, ConnectionApprovalResponse> ConnectionApprovalCallback;
@@ -275,18 +340,58 @@ public class LoadingScreenController
 }
 public class MatchResults { public static object LocalFinal; public static void Clear() => LocalFinal = null; }
 #endif
+#if !COMBAT_TESTS
 public class MatchManager
 {
     public static MatchManager Instance; public bool IsSpawned, FinalSnapshotsDelivered = true;
     public bool Running;
     public Unity.Netcode.NetworkVariable<int> phase = new(0), destroyedBases = new(0);
     public Unity.Netcode.NetworkVariable<double> phaseEndsAt = new(0);
+#if UI_FLOW_TESTS
+    public event Action<CombatFeedback> CombatConfirmed;
+    public Unity.Netcode.NetworkVariable<Unity.Collections.FixedString4096Bytes> statistics = new(default);
+    public void Emit(CombatFeedback value)=>CombatConfirmed?.Invoke(value);
+#endif
+    public static bool CanControl(PlayerHealth health)=>MatchConnectionCoordinator.GameplayAllowed && (Instance==null||Instance.Running) && !health.isDead.Value;
     public void BroadcastAbort(string reason) => MatchConnectionCoordinator.Instance.ReturnAfterFailure(reason);
 }
+#endif
 #if !UI_FLOW_TESTS
 public class MatchHud { public static MatchHud Instance; public void ShowFinal() { } }
 #endif
-public class PlayerHealth : UnityEngine.Component
-{ public Unity.Netcode.NetworkVariable<bool> isDead = new(false); public Unity.Netcode.NetworkVariable<double> respawnAt = new(-1); }
-public class PlayerState : UnityEngine.Component { public Unity.Netcode.NetworkVariable<int> teamIndex = new(0); }
-public static class PoolManager { public static void Clear() { } }
+#if !COMBAT_TESTS
+public class PlayerHealth : Unity.Netcode.NetworkBehaviour
+{
+    public static event Action<PlayerHealth> Spawned;
+    public bool isPreparedForLife = true;
+    public int maxHealth=100;
+    public Unity.Netcode.NetworkVariable<int> currentHealth = new(100);
+    public Unity.Netcode.NetworkVariable<bool> isDead = new(false);
+    public Unity.Netcode.NetworkVariable<double> respawnAt = new(-1);
+}
+#endif
+public class PlayerState : UnityEngine.Component
+{ public Unity.Netcode.NetworkVariable<int> teamIndex = new(0),spawnOrdinal=new(0); public Unity.Netcode.NetworkVariable<bool> isPrepared = new(true); }
+#if UI_FLOW_TESTS
+public class TankShooter : UnityEngine.Component
+{
+    public event Action WeaponStateChanged;
+    public float CooldownRemaining, CooldownDuration=.4f, CooldownEndsAt;
+    public bool CanFire=true;
+    public void Emit()=>WeaponStateChanged?.Invoke();
+}
+#endif
+public static class PoolManager { public static void Clear() { } public static void ReleaseActiveBullets() { } }
+#if COMBAT_TESTS
+public class PlayerMovement:UnityEngine.Component
+{ public void ClearLifeMotion() { } public void RelocateForReturn(UnityEngine.Vector3 position,UnityEngine.Quaternion rotation) { } }
+public class PlayerLook:UnityEngine.Component { public bool LocalCameraReady=true; public void ResetAfterReturn() { } }
+#endif
+namespace Unity.Collections
+{
+    public struct FixedString4096Bytes(string value)
+    {
+        public int Length => value?.Length??0;
+        public override string ToString()=>value??"";
+    }
+}

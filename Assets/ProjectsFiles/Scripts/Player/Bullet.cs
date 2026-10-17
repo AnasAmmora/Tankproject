@@ -28,6 +28,7 @@ public class Bullet : MonoBehaviour
     private ulong shooterId;
     private uint shotId;
     private bool diagnostics;
+    private Vector3 sourcePosition;
 
     private void Awake()
     {
@@ -48,6 +49,7 @@ public class Bullet : MonoBehaviour
         shooterId = sourceId;
         shotId = sourceShotId;
         diagnostics = trace;
+        sourcePosition = transform.position;
         ignoredColliders = ownerColliders;
         impactHandled = false;
         launched = true;
@@ -126,9 +128,9 @@ public class Bullet : MonoBehaviour
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
         {
             PlayerHealth health = other.GetComponentInParent<PlayerHealth>();
-            bool acceptedPlayerHit = health != null && health.TakeDamage(damageAmount, attackerTeam, shooterId);
+            bool acceptedPlayerHit = health != null && health.TakeDamage(damageAmount, attackerTeam, shooterId, sourcePosition);
             TeamBase teamBase = other.GetComponentInParent<TeamBase>();
-            if (teamBase != null) teamBase.TakeDamage(damageAmount, attackerTeam);
+            if (teamBase != null) teamBase.TakeDamage(damageAmount, attackerTeam, shooterId);
             if (acceptedPlayerHit && !health.isDead.Value && tank != null) tank.ApplyHitImpulse(velocity.normalized * impactForce,
                 shooterId, shotId, diagnostics);
         }

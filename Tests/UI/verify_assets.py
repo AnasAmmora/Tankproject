@@ -25,6 +25,8 @@ def documents(path):
 loading_text, loading = documents('Prefabes/UI/LoadingCanvas.prefab')
 match_text, match = documents('Prefabes/UI/MatchCanvas.prefab')
 row_text, row = documents('Prefabes/UI/ResultRow.prefab')
+mate_text, mate = documents('Prefabes/UI/TeammateRow.prefab')
+feed_text, feed = documents('Prefabes/UI/KillFeedRow.prefab')
 player_text, player = documents('Prefabes/Player.prefab')
 legacy_text, legacy = documents('Prefabes/UI/LegacyNetworkLobbyCanvas.prefab')
 menu_text, menu = documents('Scenes/MainMenuScene.unity')
@@ -79,10 +81,72 @@ for b in (902001000,902002000):
 binding(match, 900011003, 'resultsPanel', 1)
 binding(match, 900011003, 'back', 114, 'UnityEngine.UI.Button')
 binding(match, 900011003, 'sceneEventSystem', 114, 'UnityEngine.EventSystems.EventSystem')
+binding(match, 900011003, 'gameplayHud', 114, 'GameplayHud')
 check('m_IsActive: 0' in match['5908618560838622175'][1], 'Results is not shown at match preparation')
 check('m_Father: {fileID: 7949815740574562092}' in match['900013001'][1], 'Match EventSystem lifetime follows canvas')
 
 binding(player, 900012003, 'playerCanvas', 223)
+player_ui = next(id for id, (kind, body) in player.items() if kind == 114 and 'guid: 29aa6df3da0847ae881e5d281c2ac26a,' in body)
+check(f'component: {{fileID: {player_ui}}}' in player['6930759457325569799'][1],
+      'PlayerUI must be attached to the actual network player root, not just exist as a document')
+check('m_Enabled: 1' in player[player_ui][1], 'PlayerUI must be enabled')
+check('m_LocalScale: {x: 1, y: 1, z: 1}' in player['5648818007334600302'][1],
+      'PlayerCanvas must not have zero scale')
+
+def hierarchy(docs, root_transform):
+    visited = set()
+    def walk(id):
+        check(id not in visited, f'Hierarchy cycle/duplicate child: {id}')
+        visited.add(id)
+        body = docs[id][1]
+        owner = re.search(r'm_GameObject: \{fileID: (\d+)\}', body)[1]
+        for component in re.findall(r'component: \{fileID: (\d+)\}', docs[owner][1]):
+            check(f'm_GameObject: {{fileID: {owner}}}' in docs[component][1], f'{owner}: component owner mismatch')
+        children = re.search(r'  m_Children:(.*?)(?=  m_Father:)', body, re.S)[1]
+        for child in re.findall(r'fileID: (\d+)', children):
+            check(f'm_Father: {{fileID: {id}}}' in docs[child][1], f'{child}: inconsistent hierarchy parent')
+            walk(child)
+    walk(str(root_transform))
+    return visited
+
+reachable = hierarchy(player, 1871954718826377230)
+for widget in (910001001, 910020001, 910030001, 910040001, 910003001, 910034001):
+    check(str(widget) in reachable, f'Player UI widget {widget} must be reachable from network player root')
+hierarchy(match, 7949815740574562092)
+for field in ('health','shooter','state'):
+    binding(player,player_ui,field,114)
+for field in ('combat','abilitySlot','weaponReady','hitMarker','killMarker'):
+    binding(player,player_ui,field,1)
+for field in ('reload','healthFill'):
+    binding(player,player_ui,field,114,'UnityEngine.UI.Image')
+for field in ('healthText','killText'):
+    binding(player,player_ui,field,114,'TMPro.TextMeshProUGUI')
+for field in ('lowHealth','confirmation'):
+    binding(player,player_ui,field,225)
+check('m_FillMethod: 4' in player['910003003'][1], 'Reload ring is authored Radial360')
+check('m_FillMethod: 0' in player['910034003'][1], 'Health bar is authored horizontal fill')
+check('m_Interactable: 0' in player['910040004'][1], 'Special ability remains an unavailable placeholder')
+check('m_IsActive: 0' in player['910043000'][1], 'No fake special-ability cooldown is displayed')
+check('m_Children: []' in player['6720335323447062107'][1], 'Original crosshair preserved')
+for b in (910010000,910011000,910012000):
+    binding(player,b+3,'bearing',224)
+    binding(player,b+3,'fade',225)
+for field in ('gameplayRoot','teammatePanel'):
+    binding(match,920040003,field,1)
+for field in ('timer','phaseLabel','lifeStatus'):
+    binding(match,920040003,field,114,'TMPro.TextMeshProUGUI')
+for field in ('timerAccent','baseNotice','overtimeNotice'):
+    binding(match,920040003,field,225)
+for field in ('teammateRows','feedRows'):
+    binding(match,920040003,field,224)
+check('teammatePrefab: {fileID: 930000005, guid:' in match_text and 'feedPrefab: {fileID: 940000007, guid:' in match_text,
+      'General HUD instantiates only authored row prefabs')
+for field in ('playerName','healthText','lifeText'):
+    binding(mate,930000005,field,114,'TMPro.TextMeshProUGUI')
+binding(mate,930000005,'healthFill',114,'UnityEngine.UI.Image')
+for field in ('killer','action','victim'):
+    binding(feed,940000007,field,114,'TMPro.TextMeshProUGUI')
+binding(feed,940000007,'fade',225)
 check('m_GameObject: {fileID: 6930759457325569799}' in player['900012003'][1], 'UI controller stays on player root')
 check('m_GameObject: {fileID: 3428975614587819729}' in player['5328343828189518156'][1], 'Only PlayerCanvas is targeted')
 

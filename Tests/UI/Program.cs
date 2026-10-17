@@ -9,7 +9,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-static class Program
+static partial class Program
 {
     static int checks;
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -39,6 +39,7 @@ static class Program
         Set(hud, "rowPrefab", Row());
         Set(hud, "resultsPanel", new GameObject("Results")); Set(hud, "back", Component<Button>());
         Set(hud, "sceneEventSystem", Component<EventSystem>());
+        Set(hud, "gameplayHud", new GameplayHud());
         return hud;
     }
     static ResultRow Row()
@@ -131,6 +132,7 @@ static class Program
         Call(nextHud, "OnDestroy"); Call(screen, "OnDestroy");
         var missing = Loading(); Set(missing, "status", null); Call(missing, "Awake");
         Assert(!missing.IsConfigured && Debug.Messages.Any(m => m.Contains("missing Inspector reference 'status'")), "Missing reference is reported without creating UI");
+        VerifyGameplay();
         Console.WriteLine($"PASS: {checks} UI lifecycle assertions (simulated engine boundary).");
     }
 }
