@@ -12,6 +12,13 @@ public class PlayerMovement : NetworkBehaviour
     public float rotationSpeed = 120f;
     [Min(0.01f)] public float driveAcceleration = 12f;
 
+    [Header("Wheel and track presentation")]
+    [SerializeField] private TankTrackVisuals trackVisuals;
+    [SerializeField, Range(1f, 180f)] private float trackTeleportAngle = 45f;
+    private PlayerHealth trackHealth;
+    private float previousTrackYaw;
+    private bool trackSampleReady;
+
     [Header("Confirmed hit presentation (non-owners only)")]
     [SerializeField] private Transform visualModel;
     [SerializeField] private bool anticipateConfirmedHits = true;
@@ -53,6 +60,8 @@ public class PlayerMovement : NetworkBehaviour
         inputHandler = GetComponent<TankInputHandler>();
         drivingConstraints = rb.constraints;
         networkTransform = GetComponent<NetworkTransform>();
+        trackHealth = GetComponent<PlayerHealth>();
+        if (trackVisuals == null) Debug.LogError("PlayerMovement: trackVisuals reference is missing.", this);
         // Refuse presentation targets containing colliders or network/physics bodies.
         if (visualModel != null && (visualModel == transform ||
             !visualModel.IsChildOf(transform) || visualModel.GetComponentInChildren<Collider>(true) != null ||
@@ -72,6 +81,7 @@ public class PlayerMovement : NetworkBehaviour
         hitHistory.Clear();
         pendingHitTraces.Clear();
         ResetPresentation();
+        ResetTrackMotion();
         if (IsOwner) SetPreparationLock(!MatchManager.CanControl(GetComponent<PlayerHealth>()));
     }
 
@@ -167,6 +177,9 @@ public class PlayerMovement : NetworkBehaviour
     private void LateUpdate()
     {
         if (!IsSpawned) return;
+        // Feed presentation before any owner-only return. Sample the synchronized
+        // root, never the model offset used to anticipate a confirmed hit.
+        UpdateTrackMotion(Time.deltaTime);
         if ((transform.position - previousRootPosition).sqrMagnitude >
             presentationTeleportDistance * presentationTeleportDistance)
         {
@@ -234,6 +247,44 @@ public class PlayerMovement : NetworkBehaviour
             stage, trace.ConfirmedAt, Time.realtimeSinceStartupAsDouble - trace.ReceivedAt);
     }
 
+    private void UpdateTrackMotion(float dt)
+    {
+        if (trackVisuals == null) return;
+        float yaw = transform.eulerAngles.y;
+        float yawDelta = Mathf.DeltaAngle(previousTrackYaw, yaw);
+        previousTrackYaw = yaw;
+        Vector3 displacement = transform.position - previousRootPosition;
+        bool canAnimate = MatchResults.LocalFinal == null && MatchManager.CanControl(trackHealth);
+        bool discontinuity = displacement.sqrMagnitude > presentationTeleportDistance * presentationTeleportDistance ||
+            Mathf.Abs(yawDelta) > trackTeleportAngle;
+        bool sampleValid = trackSampleReady && dt > 0f && !discontinuity;
+        trackSampleReady = canAnimate && dt > 0f;
+        if (!canAnimate || !sampleValid)
+        {
+            trackVisuals.SetMotion(0f, 0f);
+            return;
+        }
+        if (IsOwner)
+        {
+            trackVisuals.SetMotion(inputHandler.MoveInput.y, inputHandler.MoveInput.x);
+            return;
+        }
+        Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+        float drive = Vector3.Dot(displacement, forward) / (dt * Mathf.Max(0.001f, Mathf.Abs(moveSpeed)));
+        float turn = yawDelta / (dt * Mathf.Max(0.001f, Mathf.Abs(rotationSpeed)));
+        trackVisuals.SetMotion(drive, turn);
+    }
+
+    private void ResetTrackMotion()
+    {
+        trackSampleReady = false;
+        previousTrackYaw = transform.eulerAngles.y;
+        if (trackVisuals != null) trackVisuals.SetMotion(0f, 0f);
+    }
+
+    private void OnEnable() => ResetTrackMotion();
+    private void OnDisable() => ResetTrackMotion();
+
     private void ResetPresentation()
     {
         visualPrediction.Reset();
@@ -244,6 +295,7 @@ public class PlayerMovement : NetworkBehaviour
 
     public void ClearLifeMotion()
     {
+        ResetTrackMotion();
         pendingImpulse = Vector3.zero;
         pendingHitTraces.Clear();
         awaitingAuthorityState = awaitingDisplayedMovement = false;
@@ -265,6 +317,7 @@ public class PlayerMovement : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
+        ResetTrackMotion();
         SetPreparationLock(false);
         ResetPresentation();
         pendingImpulse = Vector3.zero;

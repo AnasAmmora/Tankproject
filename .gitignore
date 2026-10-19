@@ -37,6 +37,7 @@ ExportedObj/
 *.csproj
 !Tests/Combat/Combat.Tests.csproj
 !Tests/Combat/Projectile.Tests.csproj
+!Tests/Tracks/Tracks.Tests.csproj
 *.unityproj
 *.sln
 *.suo
