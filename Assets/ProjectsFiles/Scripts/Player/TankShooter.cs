@@ -1,3 +1,4 @@
+using System;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -31,13 +32,16 @@ public class TankShooter : NetworkBehaviour
     private uint lastServerShot;
     private double nextServerFireAt;
     private bool fireSubscribed;
-    public event System.Action WeaponStateChanged;
+    public event Action WeaponStateChanged;
     public float CooldownDuration => fireCooldown;
     public float CooldownRemaining => Mathf.Max(0f, nextFireTime - Time.time);
     // Expose the existing deadline so presentation can distinguish completion
     // from a reset/cancellation without maintaining a second reload timer.
     public float CooldownEndsAt => nextFireTime;
     public bool CanFire => IsSpawned && IsOwner && MatchManager.CanControl(GetComponent<PlayerHealth>()) && Time.time >= nextFireTime;
+
+    public event Action ShotFired;
+    public event Action EmptyFireAttempted;
 
     private void Awake()
     {
@@ -83,7 +87,18 @@ public class TankShooter : NetworkBehaviour
 
     private void TryFire()
     {
-        if (!CanFire) return;
+        if (!IsSpawned || !IsOwner)
+            return;
+
+        if (!MatchManager.CanControl(GetComponent<PlayerHealth>()))
+            return;
+
+        if (Time.time < nextFireTime)
+        {
+            EmptyFireAttempted?.Invoke();
+            return;
+        }
+
         nextFireTime = Time.time + fireCooldown;
         WeaponStateChanged?.Invoke();
 
@@ -147,15 +162,34 @@ public class TankShooter : NetworkBehaviour
         if (bulletInstance.TryGetComponent<Bullet>(out Bullet bullet))
         {
             int myTeamIndex = -1;
+
             if (TryGetComponent<PlayerState>(out PlayerState pState))
             {
                 myTeamIndex = pState.teamIndex.Value;
             }
 
             bool trace = diagnostics ?? logHitTiming;
-            bullet.Launch(dir, ownerColliders, myTeamIndex,
-                NetworkObjectId, shotId, trace);
-            TraceShot(trace, NetworkObjectId, shotId, ulong.MaxValue, "projectile-launched");
+
+            bullet.Launch(
+                dir,
+                ownerColliders,
+                myTeamIndex,
+                NetworkObjectId,
+                shotId,
+                trace);
+
+            TraceShot(
+                trace,
+                NetworkObjectId,
+                shotId,
+                ulong.MaxValue,
+                "projectile-launched");
+
+
+            if (IsClient)
+            {
+                ShotFired?.Invoke();
+            }
         }
 
         if (muzzleFlashPrefab != null)
