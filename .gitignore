@@ -38,6 +38,8 @@ ExportedObj/
 !Tests/Combat/Combat.Tests.csproj
 !Tests/Combat/Projectile.Tests.csproj
 !Tests/Tracks/Tracks.Tests.csproj
+!Tests/Recoil/Recoil.Tests.csproj
+!Tests/NetworkPresentation/Interpolation.Tests.csproj
 *.unityproj
 *.sln
 *.suo

@@ -1,0 +1,38 @@
+Actual NGO 2.13.3 interpolator; synthetic clocks/packets; 30 Hz network, 50 Hz physics, RB presentation model=20ms.
+Host->Client oneWay=0 jitter=+/-0 Lerp+smooth (before): firstState=40ms visible=180ms recoil90=240ms stop=160ms
+Host->Client oneWay=0 jitter=+/-0 Lerp only: firstState=40ms visible=180ms recoil90=240ms stop=160ms
+Host->Client oneWay=0 jitter=+/-0 Legacy+smooth: firstState=40ms visible=120ms recoil90=360ms stop=460ms
+Host->Client oneWay=0 jitter=+/-0 Legacy only: firstState=40ms visible=120ms recoil90=220ms stop=140ms
+Host->Client oneWay=50 jitter=+/-10 Lerp+smooth (before): firstState=100ms visible=300ms recoil90=340ms stop=280ms
+Host->Client oneWay=50 jitter=+/-10 Lerp only: firstState=100ms visible=300ms recoil90=340ms stop=280ms
+Host->Client oneWay=50 jitter=+/-10 Legacy+smooth: firstState=100ms visible=160ms recoil90=400ms stop=520ms
+Host->Client oneWay=50 jitter=+/-10 Legacy only: firstState=100ms visible=160ms recoil90=280ms stop=200ms
+Host->Client oneWay=100 jitter=+/-20 Lerp+smooth (before): firstState=160ms visible=440ms recoil90=500ms stop=440ms
+Host->Client oneWay=100 jitter=+/-20 Lerp only: firstState=160ms visible=440ms recoil90=500ms stop=440ms
+Host->Client oneWay=100 jitter=+/-20 Legacy+smooth: firstState=160ms visible=220ms recoil90=460ms stop=560ms
+Host->Client oneWay=100 jitter=+/-20 Legacy only: firstState=160ms visible=220ms recoil90=320ms stop=240ms
+Client->Host oneWay=0 jitter=+/-0 Lerp+smooth (before): firstState=40ms visible=60ms recoil90=120ms stop=40ms
+Client->Host oneWay=0 jitter=+/-0 Lerp only: firstState=40ms visible=60ms recoil90=120ms stop=40ms
+Client->Host oneWay=0 jitter=+/-0 Legacy+smooth: firstState=40ms visible=60ms recoil90=280ms stop=360ms
+Client->Host oneWay=0 jitter=+/-0 Legacy only: firstState=40ms visible=60ms recoil90=100ms stop=20ms
+Client->Host oneWay=50 jitter=+/-10 Lerp+smooth (before): firstState=100ms visible=120ms recoil90=160ms stop=100ms
+Client->Host oneWay=50 jitter=+/-10 Lerp only: firstState=100ms visible=120ms recoil90=160ms stop=100ms
+Client->Host oneWay=50 jitter=+/-10 Legacy+smooth: firstState=100ms visible=120ms recoil90=320ms stop=400ms
+Client->Host oneWay=50 jitter=+/-10 Legacy only: firstState=100ms visible=120ms recoil90=140ms stop=80ms
+Client->Host oneWay=100 jitter=+/-20 Lerp+smooth (before): firstState=160ms visible=180ms recoil90=200ms stop=140ms
+Client->Host oneWay=100 jitter=+/-20 Lerp only: firstState=160ms visible=180ms recoil90=200ms stop=140ms
+Client->Host oneWay=100 jitter=+/-20 Legacy+smooth: firstState=160ms visible=180ms recoil90=380ms stop=460ms
+Client->Host oneWay=100 jitter=+/-20 Legacy only: firstState=160ms visible=180ms recoil90=180ms stop=120ms
+Client->Client oneWay=0 jitter=+/-0 Lerp+smooth (before): firstState=40ms visible=140ms recoil90=200ms stop=140ms
+Client->Client oneWay=0 jitter=+/-0 Lerp only: firstState=40ms visible=140ms recoil90=200ms stop=140ms
+Client->Client oneWay=0 jitter=+/-0 Legacy+smooth: firstState=40ms visible=60ms recoil90=300ms stop=400ms
+Client->Client oneWay=0 jitter=+/-0 Legacy only: firstState=40ms visible=60ms recoil90=160ms stop=80ms
+Client->Client oneWay=50 jitter=+/-10 Lerp+smooth (before): firstState=160ms visible=220ms recoil90=280ms stop=220ms
+Client->Client oneWay=50 jitter=+/-10 Lerp only: firstState=160ms visible=220ms recoil90=280ms stop=220ms
+Client->Client oneWay=50 jitter=+/-10 Legacy+smooth: firstState=160ms visible=180ms recoil90=380ms stop=460ms
+Client->Client oneWay=50 jitter=+/-10 Legacy only: firstState=160ms visible=180ms recoil90=180ms stop=120ms
+Client->Client oneWay=100 jitter=+/-20 Lerp+smooth (before): firstState=260ms visible=320ms recoil90=360ms stop=300ms
+Client->Client oneWay=100 jitter=+/-20 Lerp only: firstState=260ms visible=320ms recoil90=360ms stop=300ms
+Client->Client oneWay=100 jitter=+/-20 Legacy+smooth: firstState=260ms visible=280ms recoil90=480ms stop=560ms
+Client->Client oneWay=100 jitter=+/-20 Legacy only: firstState=260ms visible=280ms recoil90=280ms stop=220ms
+PASS: nine controlled before/after path/latency cases; unchanged delivery schedule and clocks.

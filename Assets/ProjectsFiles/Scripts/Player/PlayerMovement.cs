@@ -13,17 +13,15 @@ public class PlayerMovement : NetworkBehaviour
     [Min(0.01f)] public float driveAcceleration = 12f;
     [SerializeField] private TankGrounding grounding;
     private readonly List<Vector3> blockingNormals = new List<Vector3>(8);
-
-    [Header("Wheel and track presentation")]
     [SerializeField] private TankTrackVisuals trackVisuals;
     [SerializeField, Range(1f, 180f)] private float trackTeleportAngle = 45f;
     private PlayerHealth trackHealth;
     private float previousTrackYaw;
     private bool trackSampleReady;
 
-    [Header("Confirmed hit presentation (non-owners only)")]
     [SerializeField] private Transform visualModel;
     [SerializeField] private bool anticipateConfirmedHits = true;
+    [SerializeField] private bool anticipateFiringRecoil = true;
     [SerializeField, Min(0f)] private float maxVisualOffset = 0.5f;
     [SerializeField, Min(0.01f)] private float visualReconcileTime = 0.15f;
     [SerializeField, Min(0.1f)] private float presentationTeleportDistance = 2f;
@@ -36,6 +34,7 @@ public class PlayerMovement : NetworkBehaviour
     private readonly HashSet<(ulong, uint)> receivedHits = new HashSet<(ulong, uint)>();
     private readonly Queue<(ulong, uint)> hitHistory = new Queue<(ulong, uint)>();
     private readonly List<HitTrace> pendingHitTraces = new List<HitTrace>();
+    private readonly List<(uint ShotId, double QueuedAt)> pendingRecoilTraces = new List<(uint, double)>();
     private Vector3 modelLocalPosition;
     private Vector3 previousRootPosition;
     private Vector3 observedRootVelocity;
@@ -46,6 +45,7 @@ public class PlayerMovement : NetworkBehaviour
     private bool awaitingAuthorityState;
     private bool awaitingDisplayedMovement;
     private bool visualStartLogged;
+    public Vector3 PresentedModelPosition => visualModel != null ? visualModel.position : transform.position;
 
     private struct HitTrace
     {
@@ -83,6 +83,7 @@ public class PlayerMovement : NetworkBehaviour
         receivedHits.Clear();
         hitHistory.Clear();
         pendingHitTraces.Clear();
+        pendingRecoilTraces.Clear();
         ResetPresentation();
         ResetTrackMotion();
         if (IsOwner) SetPreparationLock(!MatchManager.CanControl(GetComponent<PlayerHealth>()));
@@ -146,6 +147,35 @@ public class PlayerMovement : NetworkBehaviour
         StepMotor(inputHandler.MoveInput, Time.fixedDeltaTime);
     }
 
+    // Local gameplay impulses share the hit impulse accumulator. The existing
+    // motor skips correction on the application step and brakes gradually later.
+    public bool QueueOwnerImpulse(Vector3 impulse, uint shotId = 0)
+    {
+        if (!IsSpawned || !IsOwner || rb.isKinematic ||
+            !MatchManager.CanControl(trackHealth)) return false;
+        pendingImpulse += impulse;
+        if (shotId != 0) pendingRecoilTraces.Add((shotId, Time.realtimeSinceStartupAsDouble));
+        return true;
+    }
+
+    // The server-accepted shot event can precede buffered root motion on a client.
+    // Anticipate only the part of the shot's timeline not yet displayed. Use the
+    // same trajectory as confirmed hits so received displacement is subtracted
+    // once, with the existing wall sweep, bound and life/teleport cleanup.
+    public void PresentFiringRecoil(Vector3 impulse, double firedAt)
+    {
+        if (!IsSpawned || IsOwner || !anticipateFiringRecoil || visualModel == null || impulse == Vector3.zero ||
+            !MatchManager.CanControl(trackHealth)) return;
+        if (double.IsNaN(firedAt) || double.IsInfinity(firedAt) ||
+            float.IsNaN(impulse.sqrMagnitude) || float.IsInfinity(impulse.sqrMagnitude)) return;
+        var motion = networkTransform as TankNetworkTransform;
+        if (motion == null || !motion.TryGetRenderTime(out double displayedAt)) return;
+        float lead = (float)(firedAt + Time.fixedDeltaTime - displayedAt);
+        if (lead <= 0f) return; // Host may already display this client-owned shot's movement.
+        visualPrediction.Begin(transform.position, observedRootVelocity, impulse / rb.mass,
+            Mathf.Min(lead, 0.6f), transform.forward, moveSpeed);
+    }
+
     // Also exercised by the isolated Editor physics checks. Authority is checked
     // above, never by the probe or by a second Rigidbody/controller.
     private void StepMotor(Vector2 input, float dt)
@@ -175,9 +205,15 @@ public class PlayerMovement : NetworkBehaviour
         {
             rb.AddForce(pendingImpulse, ForceMode.Impulse);
             pendingImpulse = Vector3.zero;
+            foreach (var trace in pendingRecoilTraces)
+                (networkTransform as TankNetworkTransform)?.ImpulseApplied(trace.ShotId, trace.QueuedAt);
+            pendingRecoilTraces.Clear();
             foreach (HitTrace trace in pendingHitTraces) TraceHit(trace, "owner-impulse-applied");
             pendingHitTraces.Clear();
         }
+        // Equal/opposite impulses may sum to zero; never carry their trace IDs
+        // into an unrelated later physics step.
+        pendingRecoilTraces.Clear();
 
         rb.MoveRotation(grounding.GetSteeredRotation(input.x * rotationSpeed * dt, dt));
     }
@@ -207,6 +243,7 @@ public class PlayerMovement : NetworkBehaviour
             blockingNormals.Clear();
             rb.linearVelocity = rb.angularVelocity = Vector3.zero;
             pendingImpulse = Vector3.zero;
+            pendingRecoilTraces.Clear();
         }
     }
 
@@ -260,7 +297,11 @@ public class PlayerMovement : NetworkBehaviour
             TraceHit(lastHitTrace, "confirmed-visual-start");
             visualStartLogged = true;
         }
-        if (!visualPrediction.IsActive) TraceHit(lastHitTrace, "visual-reconciled");
+        if (!visualPrediction.IsActive)
+        {
+            TraceHit(lastHitTrace, "visual-reconciled");
+            lastHitTrace = default;
+        }
     }
 
     private Vector3 LimitVisualOffset(Vector3 offset)
@@ -336,6 +377,8 @@ public class PlayerMovement : NetworkBehaviour
         ResetTrackMotion();
         pendingImpulse = Vector3.zero;
         pendingHitTraces.Clear();
+        pendingRecoilTraces.Clear();
+        (networkTransform as TankNetworkTransform)?.ResetLifeTracking();
         awaitingAuthorityState = awaitingDisplayedMovement = false;
         ResetPresentation();
         if (IsOwner && !rb.isKinematic)
@@ -360,6 +403,7 @@ public class PlayerMovement : NetworkBehaviour
         ResetPresentation();
         pendingImpulse = Vector3.zero;
         pendingHitTraces.Clear();
+        pendingRecoilTraces.Clear();
         awaitingAuthorityState = awaitingDisplayedMovement = false;
     }
 }

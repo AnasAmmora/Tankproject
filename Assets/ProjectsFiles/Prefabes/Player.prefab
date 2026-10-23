@@ -3811,6 +3811,7 @@ GameObject:
   - component: {fileID: 910060005}
   - component: {fileID: 6318840327539441570}
   - component: {fileID: 7085084057009642684}
+  - component: {fileID: 920230001}
   m_Layer: 6
   m_Name: Player
   m_TagString: Untagged
@@ -3900,7 +3901,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 4181086163
+  GlobalObjectIdHash: 93640355
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -3924,16 +3925,16 @@ MonoBehaviour:
   m_GameObject: {fileID: 6930759457325569799}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e96cb6065543e43c4a752faaa1468eb1, type: 3}
+  m_Script: {fileID: 11500000, guid: 38448713bfc644e688f2271e1b087862, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Components.NetworkTransform
+  m_EditorClassIdentifier: Assembly-CSharp::TankNetworkTransform
   ShowTopMostFoldoutHeaderGroup: 1
   NetworkTransformExpanded: 0
   AutoOwnerAuthorityTickOffset: 1
-  PositionInterpolationType: 1
+  PositionInterpolationType: 0
   RotationInterpolationType: 0
   ScaleInterpolationType: 0
-  PositionLerpSmoothing: 1
+  PositionLerpSmoothing: 0
   PositionMaxInterpolationTime: 0.1
   RotationLerpSmoothing: 1
   RotationMaxInterpolationTime: 0.1
@@ -3961,6 +3962,7 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 1
+  logMotionTiming: 0
 --- !u!114 &7714933645308099243
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4014,6 +4016,7 @@ MonoBehaviour:
   trackTeleportAngle: 45
   visualModel: {fileID: 776674280186094575}
   anticipateConfirmedHits: 1
+  anticipateFiringRecoil: 1
   maxVisualOffset: 0.5
   visualReconcileTime: 0.15
   presentationTeleportDistance: 2
@@ -4129,6 +4132,7 @@ MonoBehaviour:
   muzzlePoint: {fileID: 2724974523257913178}
   bulletPrefab: {fileID: 2665577242358380357, guid: 5e7299dea9b86e14a8cfb7a218330ec4, type: 3}
   fireCooldown: 0.4
+  recoil: {fileID: 920230001}
   aimCamera: {fileID: 0}
   aimRayDistance: 200
   aimLayerMask:
@@ -4361,6 +4365,21 @@ MonoBehaviour:
   alignmentSpeed: 180
   alignToSlope: 1
   logDiagnostics: 0
+--- !u!114 &920230001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6930759457325569799}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 073ecccbaf7b4fd98313ba75ac2c7a57, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TankRecoil
+  IsActive: 1
+  recoilForce: 50
+  movement: {fileID: 744912970748391413}
 --- !u!1 &7072648326952660084
 GameObject:
   m_ObjectHideFlags: 0
