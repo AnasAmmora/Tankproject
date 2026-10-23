@@ -61,7 +61,7 @@ public class PlayerLook : NetworkBehaviour
 
             if (tankHead != null)
             {
-                headInitialRotation = tankHead.rotation;
+                headInitialRotation = Quaternion.FromToRotation(transform.up, Vector3.up) * tankHead.rotation;
                 referenceYaw = transform.eulerAngles.y;
             }
 
@@ -85,7 +85,7 @@ public class PlayerLook : NetworkBehaviour
 
         if (tankHead != null)
         {
-            headInitialRotation = tankHead.rotation;
+            headInitialRotation = Quaternion.FromToRotation(transform.up, Vector3.up) * tankHead.rotation;
             referenceYaw = transform.eulerAngles.y;
             netTurretYaw.Value = referenceYaw;
             localTurretYaw = referenceYaw;
@@ -148,6 +148,9 @@ public class PlayerLook : NetworkBehaviour
                     ref displayedYawVelocity, remoteYawSmoothTime, Mathf.Infinity, Time.deltaTime);
         }
         previousPresentationPosition = transform.position;
+        // Body pitch/roll must not tilt the camera's world-space aim.
+        if (IsOwner && cameraTarget != null)
+            cameraTarget.rotation = Quaternion.Euler(cameraPitch, cameraYaw, 0f);
         ApplyTurretRotation();
     }
 
@@ -220,6 +223,7 @@ public class PlayerLook : NetworkBehaviour
         float delta = Mathf.DeltaAngle(referenceYaw, currentYaw);
         if (invertTurretRotation) delta = -delta;
 
-        tankHead.rotation = Quaternion.AngleAxis(delta, Vector3.up) * headInitialRotation;
+        tankHead.rotation = Quaternion.FromToRotation(Vector3.up, transform.up) *
+            Quaternion.AngleAxis(delta, Vector3.up) * headInitialRotation;
     }
 }

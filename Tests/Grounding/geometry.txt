@@ -1,0 +1,14 @@
+Root scale: (10.000000, 10.000000, 10.000000)
+TankBody root-local center=(0.000000, -0.002959, 0.004886) size=(0.029160, 0.013895, 0.056279)
+TankHead root-local center=(0.000000, 0.012364, 0.019186) size=(0.018728, 0.016951, 0.053798)
+Track root-local center=(0.000000, -0.008074, 0.005446) size=(0.028109, 0.012453, 0.052744)
+Wheel1 root-local center=(0.000000, -0.007336, 0.026249) size=(0.024649, 0.008732, 0.008732)
+Wheel2 root-local center=(0.000000, -0.009344, 0.017585) size=(0.023508, 0.007632, 0.007632)
+Wheel3 root-local center=(0.000000, -0.009344, 0.009478) size=(0.023508, 0.007632, 0.007632)
+Wheel4 root-local center=(0.000000, -0.009344, 0.001378) size=(0.023508, 0.007372, 0.007372)
+Wheel5 root-local center=(0.000000, -0.009344, -0.006722) size=(0.023508, 0.007632, 0.007632)
+Wheel6 root-local center=(0.000000, -0.007473, -0.015353) size=(0.024649, 0.008732, 0.008732)
+Rigidbody Player constraints=FreezeRotation
+Collider Player BoxCollider
+Collider LeftTrack CapsuleCollider
+Collider RightTrack CapsuleCollider

@@ -11,6 +11,8 @@ public class PlayerMovement : NetworkBehaviour
     public float moveSpeed = 10f;
     public float rotationSpeed = 120f;
     [Min(0.01f)] public float driveAcceleration = 12f;
+    [SerializeField] private TankGrounding grounding;
+    private readonly List<Vector3> blockingNormals = new List<Vector3>(8);
 
     [Header("Wheel and track presentation")]
     [SerializeField] private TankTrackVisuals trackVisuals;
@@ -61,6 +63,7 @@ public class PlayerMovement : NetworkBehaviour
         drivingConstraints = rb.constraints;
         networkTransform = GetComponent<NetworkTransform>();
         trackHealth = GetComponent<PlayerHealth>();
+        if (grounding == null) Debug.LogError("PlayerMovement: grounding reference is missing.", this);
         if (trackVisuals == null) Debug.LogError("PlayerMovement: trackVisuals reference is missing.", this);
         // Refuse presentation targets containing colliders or network/physics bodies.
         if (visualModel != null && (visualModel == transform ||
@@ -140,15 +143,33 @@ public class PlayerMovement : NetworkBehaviour
         SetPreparationLock(!MatchManager.CanControl(GetComponent<PlayerHealth>()));
         if (preparationLocked) return;
 
-        // Accelerate toward drive speed without overwriting the hit velocity.
-        // The motor brakes knockback gradually; gravity remains independent.
-        Vector3 velocity = rb.linearVelocity;
-        Vector3 planarVelocity = new Vector3(velocity.x, 0f, velocity.z);
-        Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
-        Vector3 targetVelocity = forward * (inputHandler.MoveInput.y * moveSpeed);
-        Vector3 nextVelocity = Vector3.MoveTowards(planarVelocity, targetVelocity,
-            driveAcceleration * Time.fixedDeltaTime);
-        rb.AddForce(nextVelocity - planarVelocity, ForceMode.VelocityChange);
+        StepMotor(inputHandler.MoveInput, Time.fixedDeltaTime);
+    }
+
+    // Also exercised by the isolated Editor physics checks. Authority is checked
+    // above, never by the probe or by a second Rigidbody/controller.
+    private void StepMotor(Vector2 input, float dt)
+    {
+        grounding.Sample();
+        if (grounding.Grounded && pendingImpulse == Vector3.zero)
+        {
+            Vector3 normal = grounding.Normal;
+            Vector3 tangentVelocity = Vector3.ProjectOnPlane(rb.linearVelocity, normal);
+            Vector3 forward = Vector3.ProjectOnPlane(rb.rotation * Vector3.forward, normal).normalized;
+            Vector3 target = forward * (input.y * moveSpeed);
+            // Counter only gravity along the supported slope, within the same
+            // acceleration budget. Preserve all velocity normal to the ground.
+            Vector3 correction = target - tangentVelocity - Vector3.ProjectOnPlane(Physics.gravity, normal) * dt;
+            correction = Vector3.ClampMagnitude(correction, driveAcceleration * dt);
+            foreach (Vector3 wall in blockingNormals)
+            {
+                Vector3 barrier = Vector3.ProjectOnPlane(wall, normal).normalized;
+                float into = Vector3.Dot(correction, barrier);
+                if (into < 0f) correction -= barrier * into;
+            }
+            rb.AddForce(correction, ForceMode.VelocityChange);
+        }
+        blockingNormals.Clear();
 
         if (pendingImpulse != Vector3.zero)
         {
@@ -158,8 +179,21 @@ public class PlayerMovement : NetworkBehaviour
             pendingHitTraces.Clear();
         }
 
-        float turnAmount = inputHandler.MoveInput.x * rotationSpeed * Time.fixedDeltaTime;
-        rb.MoveRotation(rb.rotation * Quaternion.Euler(0f, turnAmount, 0f));
+        rb.MoveRotation(grounding.GetSteeredRotation(input.x * rotationSpeed * dt, dt));
+    }
+
+    private void OnCollisionEnter(Collision collision) => RememberWalls(collision);
+    private void OnCollisionStay(Collision collision) => RememberWalls(collision);
+
+    private void RememberWalls(Collision collision)
+    {
+        if (!IsSpawned || !IsOwner || grounding == null) return;
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            Vector3 normal = collision.GetContact(i).normal;
+            if (Vector3.Dot(normal, Vector3.up) < grounding.MinimumGroundDot)
+                blockingNormals.Add(normal);
+        }
     }
 
     private void SetPreparationLock(bool locked)
@@ -169,6 +203,8 @@ public class PlayerMovement : NetworkBehaviour
         rb.constraints = locked ? RigidbodyConstraints.FreezeAll : drivingConstraints;
         if (locked)
         {
+            grounding?.ResetSupport();
+            blockingNormals.Clear();
             rb.linearVelocity = rb.angularVelocity = Vector3.zero;
             pendingImpulse = Vector3.zero;
         }
@@ -295,6 +331,8 @@ public class PlayerMovement : NetworkBehaviour
 
     public void ClearLifeMotion()
     {
+        grounding?.ResetSupport();
+        blockingNormals.Clear();
         ResetTrackMotion();
         pendingImpulse = Vector3.zero;
         pendingHitTraces.Clear();
