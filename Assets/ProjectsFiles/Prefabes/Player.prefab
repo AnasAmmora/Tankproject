@@ -31,7 +31,6 @@ RectTransform:
   - {fileID: 6720335323447062107}
   - {fileID: 910002001}
   - {fileID: 910003001}
-  - {fileID: 910004001}
   - {fileID: 910010001}
   - {fileID: 910011001}
   - {fileID: 910012001}
@@ -190,81 +189,6 @@ MonoBehaviour:
   m_FillAmount: 1
   m_FillClockwise: 1
   m_FillOrigin: 2
-  m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
---- !u!1 &910004000
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 910004001}
-  - component: {fileID: 910004002}
-  - component: {fileID: 910004003}
-  m_Layer: 5
-  m_Name: WeaponReady
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!224 &910004001
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 910004000}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 910001001}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 82, y: 82}
-  m_Pivot: {x: 0.5, y: 0.5}
---- !u!222 &910004002
-CanvasRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 910004000}
-  m_CullTransparentMesh: 1
---- !u!114 &910004003
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 910004000}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
-  m_Material: {fileID: 0}
-  m_Color: {r: 0.7, g: 0.85, b: 1, a: 0.7}
-  m_RaycastTarget: 0
-  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
-  m_Maskable: 1
-  m_OnCullStateChanged:
-    m_PersistentCalls:
-      m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: f7b5f3d5f8ba41ebab0220b2e38ec7e7, type: 3}
-  m_Type: 0
-  m_PreserveAspect: 0
-  m_FillCenter: 1
-  m_FillMethod: 4
-  m_FillAmount: 1
-  m_FillClockwise: 1
-  m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
 --- !u!1 &910010000
@@ -4268,7 +4192,6 @@ MonoBehaviour:
   combat: {fileID: 910001000}
   abilitySlot: {fileID: 910040000}
   reload: {fileID: 910003003}
-  weaponReady: {fileID: 910004000}
   healthFill: {fileID: 910034003}
   healthText: {fileID: 910032003}
   lowHealth: {fileID: 910035002}
@@ -4321,10 +4244,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f3d0536681e0094e8cd16d47d4543e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TankAudioController
-  tankShooter: {fileID: 0}
+  tankShooter: {fileID: 4834099022764106920}
   weaponSource: {fileID: 7398580840503907778}
   feedbackSource: {fileID: 4260702693789350475}
-  shotClip: {fileID: 8300000, guid: 8a15535173225e84ebcb885c66793385, type: 3}
+  shotClip: {fileID: 8300000, guid: 85b695ace86a7c74f9d69e73ff17993c, type: 3}
   emptyWeaponClip: {fileID: 8300000, guid: 9e09d229b9ce9c1428f049ce1e122eb9, type: 3}
   hitConfirmClip: {fileID: 8300000, guid: bb2e094e38c27c74db3b35e8cdee69d8, type: 3}
   killConfirmClip: {fileID: 8300000, guid: 5eaf49053413d514ab0590f526d3525d, type: 3}

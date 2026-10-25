@@ -11,7 +11,6 @@ public class PlayerUI : MonoBehaviour
     [SerializeField] private GameObject combat;
     [SerializeField] private GameObject abilitySlot;
     [SerializeField] private Image reload;
-    [SerializeField] private GameObject weaponReady;
     [SerializeField] private Image healthFill;
     [SerializeField] private TMP_Text healthText;
     [SerializeField] private CanvasGroup lowHealth;
@@ -30,12 +29,6 @@ public class PlayerUI : MonoBehaviour
     private float confirmedUntil;
     private float confirmedDuration;
     private int nextIndicator;
-    private bool observedReload;
-    private float observedReloadEndsAt;
-    private bool readyScaleCached;
-    private Vector3 readyRestScale;
-    private float readyStartedAt = -1f;
-    private const float ReadyDuration = 1f;
     public PlayerHealth Health => health;
     public PlayerState State => state;
     public ulong ClientId => health.OwnerClientId;
@@ -52,11 +45,6 @@ public class PlayerUI : MonoBehaviour
         if (!ValidateReferences()) { enabled = false; return; }
         if (!health.IsOwner) return;
         bound = true;
-        if (!readyScaleCached)
-        {
-            readyRestScale = weaponReady.transform.localScale;
-            readyScaleCached = true;
-        }
         ClearEffects();
         ReadHealth(true);
         ReadWeapon();
@@ -74,7 +62,7 @@ public class PlayerUI : MonoBehaviour
     {
         bool ok = true;
         ok &= Required(health, nameof(health)); ok &= Required(shooter, nameof(shooter)); ok &= Required(state, nameof(state));
-        ok &= Required(combat, nameof(combat)); ok &= Required(reload, nameof(reload)); ok &= Required(weaponReady, nameof(weaponReady));
+        ok &= Required(combat, nameof(combat)); ok &= Required(reload, nameof(reload));
         ok &= Required(abilitySlot, nameof(abilitySlot));
         ok &= Required(healthFill, nameof(healthFill)); ok &= Required(healthText, nameof(healthText)); ok &= Required(lowHealth, nameof(lowHealth));
         ok &= Required(confirmation, nameof(confirmation)); ok &= Required(hitMarker, nameof(hitMarker));
@@ -120,7 +108,6 @@ public class PlayerUI : MonoBehaviour
         lowHealth.alpha = !health.isDead.Value && healthTarget <= lowHealthThreshold
             ? 0.55f + 0.25f * Mathf.Sin(Time.unscaledTime * 5f) : 0f;
         ReadWeapon();
-        TickWeaponReady();
         confirmation.alpha = Mathf.Clamp01((confirmedUntil - Time.unscaledTime) / Mathf.Max(0.01f, confirmedDuration));
         if (view == null) view = Camera.main;
         foreach (var indicator in damageIndicators) indicator.Tick(view != null ? view.transform : null, health.transform.position);
@@ -160,50 +147,10 @@ public class PlayerUI : MonoBehaviour
         reload.fillAmount = HudPresentation.Reload(remaining, shooter.CooldownDuration);
         bool reloading = remaining > 0f;
         if (reload.gameObject.activeSelf != reloading) reload.gameObject.SetActive(reloading);
-        if (reloading)
-        {
-            CancelWeaponReady();
-            observedReload = true;
-            observedReloadEndsAt = shooter.CooldownEndsAt;
-        }
-        else if (observedReload)
-        {
-            observedReload = false;
-            // A cleared/replaced deadline is cancellation, even if input is ready.
-            bool completed = shooter.CooldownEndsAt == observedReloadEndsAt && Time.time >= observedReloadEndsAt;
-            if (completed && shooter.CanFire && !health.isDead.Value && combat.activeInHierarchy)
-            {
-                CancelWeaponReady();
-                weaponReady.transform.localScale = readyRestScale * 0f;
-                readyStartedAt = Time.unscaledTime;
-                weaponReady.SetActive(true);
-            }
-            else CancelWeaponReady();
-        }
-    }
-    private void TickWeaponReady()
-    {
-        if (readyStartedAt < 0f) return;
-        float elapsed = Time.unscaledTime - readyStartedAt;
-        if (elapsed >= ReadyDuration || !combat.activeInHierarchy) { CancelWeaponReady(); return; }
-        // Same unscaled Update-driven approach as the other HUD effects:
-        // scale from zero to the authored size for 0.5 seconds, then back to zero.
-        float pulse = Mathf.Clamp01(elapsed < 0.5f ? elapsed * 2f : (ReadyDuration - elapsed) * 2f);
-        pulse = pulse * pulse * (3f - 2f * pulse);
-        weaponReady.transform.localScale = readyRestScale * pulse;
-    }
-    private void CancelWeaponReady()
-    {
-        readyStartedAt = -1f;
-        if (weaponReady == null) return;
-        weaponReady.SetActive(false);
-        if (readyScaleCached) weaponReady.transform.localScale = readyRestScale;
     }
     private void ResetWeaponPresentation()
     {
-        observedReload = false;
         if (reload != null) reload.gameObject.SetActive(false);
-        CancelWeaponReady();
     }
     private void OnCombat(CombatFeedback feedback)
     {
