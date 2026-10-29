@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 7111595865322910031}
   - component: {fileID: 7107395860863461392}
   - component: {fileID: 1528785358447796943}
+  - component: {fileID: 8545892057871603567}
   m_Layer: 0
   m_Name: CinemachineCamera
   m_TagString: Untagged
@@ -61,7 +62,7 @@ MonoBehaviour:
   Lens:
     FieldOfView: 60
     OrthographicSize: 5
-    NearClipPlane: 0.3
+    NearClipPlane: 0.05
     FarClipPlane: 1000
     Dutch: 0
     ModeOverride: 0
@@ -96,14 +97,14 @@ MonoBehaviour:
   CameraSide: 0.5
   CameraDistance: 1
   AvoidObstacles:
-    Enabled: 0
+    Enabled: 1
     CollisionFilter:
       serializedVersion: 2
-      m_Bits: 256
+      m_Bits: 257
     IgnoreTag: 
     CameraRadius: 0.2
     DampingIntoCollision: 0
-    DampingFromCollision: 0.5
+    DampingFromCollision: 0.35
 --- !u!114 &7107395860863461392
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -135,7 +136,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8879467609426938150}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ca7de3aefa901374ba29464584a3109a, type: 3}
   m_Name: 
@@ -158,3 +159,16 @@ MonoBehaviour:
       m_Bits: 257
     MaximumRaycast: 5
     Damping: 0.5
+--- !u!114 &8545892057871603567
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8879467609426938150}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a09e889aeac25d349b9c0a8382c4a516, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::TankCameraInwardLimit
+  nearPlaneMargin: 0.01

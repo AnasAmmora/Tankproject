@@ -1,4 +1,5 @@
 using System;
+using Unity.Cinemachine;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -35,6 +36,7 @@ public class TankShooter : NetworkBehaviour
     private double nextServerFireAt;
     private uint lastRecoilShot;
     private bool fireSubscribed;
+    private int pendingFireAttempts;
     public event Action WeaponStateChanged;
     public float CooldownDuration => fireCooldown;
     public float CooldownRemaining => Mathf.Max(0f, nextFireTime - Time.time);
@@ -59,6 +61,7 @@ public class TankShooter : NetworkBehaviour
         if (!IsOwner) return;
 
         nextFireTime = Time.time;
+        CinemachineCore.CameraUpdatedEvent.AddListener(OnCameraUpdated);
 
         if (fireAction != null && !fireSubscribed)
         {
@@ -73,6 +76,8 @@ public class TankShooter : NetworkBehaviour
 
     private void ClearFireSubscription()
     {
+        CinemachineCore.CameraUpdatedEvent.RemoveListener(OnCameraUpdated);
+        pendingFireAttempts = 0;
         if (fireAction != null && fireSubscribed)
         {
             fireAction.action.performed -= OnFirePerformed;
@@ -87,7 +92,17 @@ public class TankShooter : NetworkBehaviour
     private void OnFirePerformed(InputAction.CallbackContext context)
     {
         if (!IsOwner) return;
-        TryFire();
+        pendingFireAttempts++;
+    }
+
+    // The brain invokes this after collision correction and after applying the
+    // final pose to the rendered Camera. Never aim from last frame's camera.
+    private void OnCameraUpdated(CinemachineBrain brain)
+    {
+        if (!IsSpawned || !IsOwner || aimCamera == null || brain.OutputCamera != aimCamera) return;
+        int attempts = pendingFireAttempts;
+        pendingFireAttempts = 0;
+        for (int i = 0; i < attempts; i++) TryFire();
     }
 
     private void TryFire()
