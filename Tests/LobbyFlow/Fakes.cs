@@ -10,6 +10,7 @@ namespace UnityEngine
 {
     public class SerializeField : Attribute { }
     public class HeaderAttribute(string text) : Attribute { }
+    public class DefaultExecutionOrder(int order) : Attribute { }
     public class MinAttribute(float value) : Attribute { }
     public class RangeAttribute(float min, float max) : Attribute { }
     public class RequireComponent(Type type) : Attribute { }
@@ -32,6 +33,7 @@ namespace UnityEngine
     public class Component : Object
     {
         public bool enabled = true;
+        public bool isActiveAndEnabled => enabled && (gameObject == null || gameObject.activeInHierarchy);
         public readonly Dictionary<Type, object> Components = new();
         public GameObject gameObject;
         public Transform transform => gameObject?.transform;
@@ -115,6 +117,7 @@ namespace UnityEngine
         public static float SmoothStep(float a,float b,float t) { t=Clamp01(t); return a+(b-a)*t*t*(3-2*t); }
         public static float Max(float a,float b)=>Math.Max(a,b);
         public static int Max(int a,int b)=>Math.Max(a,b);
+        public static int Min(int a,int b)=>Math.Min(a,b);
         public static float Sin(float value)=>MathF.Sin(value);
         public static float Atan2(float a,float b)=>MathF.Atan2(a,b);
         public static float MoveTowards(float a,float b,float step)=>a < b ? Math.Min(b,a+step) : Math.Max(b,a-step);
@@ -270,6 +273,7 @@ namespace Unity.Netcode
     public class NetworkBehaviour : UnityEngine.MonoBehaviour
     {
         public NetworkManager NetworkManager=>NetworkManager.Singleton;
+        public RpcTarget RpcTarget { get; } = new();
         public bool IsServer,IsClient;
         public ulong NetworkObjectId;
         public bool IsOwner, IsSpawned;
@@ -295,7 +299,15 @@ namespace Unity.Netcode
         public SceneEventProgressStatus Result = SceneEventProgressStatus.Started;
         public SceneEventProgressStatus LoadScene(string scene, UnityEngine.SceneManagement.LoadSceneMode mode) => Result;
     }
-    public enum SendTo { Everyone,Server,Owner }
+    public enum SendTo { Everyone,Server,Owner,SpecifiedInParams }
+    public enum RpcTargetUse { Temp }
+    // Only target selection is recorded. These fakes do NOT transport or weave RPCs.
+    public class RpcTarget
+    {
+        public readonly List<ulong[]> Calls=new();
+        public RpcParams Single(ulong id,RpcTargetUse use) { Calls.Add(new[]{id});return default; }
+        public RpcParams Group(ulong[] ids,RpcTargetUse use) { Calls.Add(ids);return default; }
+    }
     public enum RpcInvokePermission { Server,Owner,Everyone }
     public class RpcAttribute(SendTo target):Attribute { public RpcInvokePermission InvokePermission; }
     public struct RpcParams { public struct Received { public ulong SenderClientId; } public Received Receive; }
@@ -312,6 +324,7 @@ namespace Unity.Netcode
         public static ulong ServerClientId => 0;
         public ulong LocalClientId;
         public bool IsListening, ShutdownInProgress, IsServer, IsConnectedClient, HostResult = true, ClientResult = true;
+        public bool IsClient => IsServer || IsConnectedClient;
         public int ShutdownCalls; public string DisconnectReason;
         public NetworkConfig NetworkConfig = new(); public NetworkSceneManager SceneManager = new();
         public Dictionary<ulong, object> ConnectedClients = new();
@@ -393,7 +406,23 @@ public class TankShooter : UnityEngine.Component
     public void Emit()=>WeaponStateChanged?.Invoke();
 }
 #endif
-public static class PoolManager { public static void Clear() { } public static void ReleaseActiveBullets() { } }
+public static class PoolManager
+{
+    public static void Clear() { }
+    public static void ReleaseActiveBullets() { }
+    public static UnityEngine.GameObject Get(UnityEngine.GameObject prefab,UnityEngine.Vector3 position,UnityEngine.Quaternion rotation) =>
+        UnityEngine.Object.Instantiate(prefab,position,rotation);
+    public static void Release(UnityEngine.GameObject instance) => instance.SetActive(false);
+}
+#if UI_FLOW_TESTS && !COMBAT_TESTS
+// Animation and pooling are checked with real TMP inside Unity, not this UI boundary.
+public class FloatingDamageNumber : UnityEngine.Component
+{
+    public bool ValidateReferences()=>true;
+    public void Show(int damage,UnityEngine.Vector3 impact,UnityEngine.Camera view) { }
+    public bool Tick(float delta,UnityEngine.Camera view)=>false;
+}
+#endif
 #if COMBAT_TESTS
 public class PlayerMovement:UnityEngine.Component
 { public void ClearLifeMotion() { } public void RelocateForReturn(UnityEngine.Vector3 position,UnityEngine.Quaternion rotation) { } }

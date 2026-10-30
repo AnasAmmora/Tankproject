@@ -4244,3 +4244,4 @@ MonoBehaviour:
   feedPrefab: {fileID: 940000007, guid: 001396f30e2e48b59a326504aff73d79, type: 3}
   maxFeedRows: 4
   feedLifetime: 5
+  floatingDamageNumberPrefab: {fileID: 3997492666006367512, guid: 925baedc034aac7468289afce7379a37, type: 3}

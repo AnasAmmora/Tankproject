@@ -16,6 +16,7 @@ static partial class Program
     {
         NetworkManager.Singleton=new NetworkManager{IsServer=true,IsListening=true};
         NetworkManager.Singleton.ServerTime.Time=20;
+        foreach(ulong id in new ulong[]{0,1,2,3})NetworkManager.Singleton.ConnectedClients[id]=new object();
         var match=new GameObject("Match",typeof(MatchManager)).GetComponent<MatchManager>();
         match.IsServer=match.IsClient=match.IsSpawned=true;
         typeof(MatchManager).GetProperty("Instance").SetValue(null,match);
@@ -49,7 +50,8 @@ static partial class Program
         Assert(!f.health.TakeDamage(25,0,100)&&f.feed.Count==before,"Repeated damage to dead player cannot duplicate kill");
         f.match.RecordDeath(f.health,100);Assert(f.feed.Count==before,"Repeated death processing cannot duplicate feedback");
         Call(f.match,"CombatFeedbackRpc",kill.Sequence,kill.VictimId,kill.AttackerId,kill.HasAttacker,kill.VictimTeam,kill.AttackerTeam,
-            kill.VictimName,kill.AttackerName,kill.IsKill,kill.IsBase,kill.HasSource,kill.Source);
+            kill.VictimName,kill.AttackerName,kill.IsKill,kill.IsBase,kill.HasSource,kill.Source,
+            kill.AppliedDamage,kill.HasImpact,kill.ImpactPosition,default(RpcParams));
         Assert(f.feed.Count==before,"Duplicate confirmation sequence is ignored on receiver");
         var baseObject=new GameObject("EnemyBase",typeof(TeamBase));var teamBase=baseObject.GetComponent<TeamBase>();
         teamBase.IsServer=teamBase.IsSpawned=true;teamBase.teamIndex=1;
@@ -67,7 +69,34 @@ static partial class Program
         Assert(f.feed.Single().AttackerId==1&&f.feed[0].VictimId==0,"Client-to-host feedback uses actual sender/victim client identities");
         f=Fixture(four:true);f.health.TakeDamage(25,0,103,new Vector3(3,0,0));
         Assert(f.feed.Single().AttackerId==3&&f.feed[0].VictimId==1,"Client-to-client damage is confirmed on server with distinct client IDs");
+        DamageNumberTests();
         PresentationTests();
         Console.WriteLine($"PASS: {checks} combat/presentation assertions (simulated engine/RPC delivery).");
+    }
+
+    static void DamageNumberTests()
+    {
+        var point=new Vector3(5,2,3);
+        var f=Fixture();f.health.currentHealth.Value=6;
+        Assert(f.health.TakeDamage(18,0,100,Vector3.zero,point),"Lethal ranged hit is accepted");
+        var feedback=f.feed.Single();
+        Assert(feedback.AppliedDamage==6&&feedback.HasImpact&&feedback.ImpactPosition.x==5,"Number carries six actual HP, not calculated eighteen");
+        Assert(feedback.IsKill&&f.rules.Players[0].kills==1,"Actual-damage payload preserves kill attribution");
+        Assert(feedback.CanShowDamageNumber(0)&&!feedback.CanShowDamageNumber(1)&&!feedback.CanShowDamageNumber(2)&&!feedback.CanShowDamageNumber(3),
+            "Host shooter eligible; victim, both teams and observers rejected");
+        Assert(f.match.RpcTarget.Calls.Count==2&&f.match.RpcTarget.Calls[0].SequenceEqual(new ulong[]{0})&&f.match.RpcTarget.Calls[1].SequenceEqual(new ulong[]{1,2,3}),
+            "Host receives single-recipient payload; other confirmation targets exclude host");
+        f=Fixture(four:true);f.health.TakeDamage(18,0,103,Vector3.zero,point);feedback=f.feed.Single();
+        Assert(feedback.AppliedDamage==18&&feedback.CanShowDamageNumber(3)&&!feedback.CanShowDamageNumber(0)&&!feedback.CanShowDamageNumber(1),
+            "Remote shooter eligible; host observer and victim rejected");
+        Assert(f.match.RpcTarget.Calls[0].SequenceEqual(new ulong[]{3})&&f.match.RpcTarget.Calls[1].SequenceEqual(new ulong[]{0,1,2}),
+            "Remote shooter targets are disjoint from observer group");
+        f=Fixture();var baseObject=new GameObject("Base",typeof(TeamBase));var teamBase=baseObject.GetComponent<TeamBase>();
+        teamBase.IsServer=true;teamBase.teamIndex=1;teamBase.currentHealth.Value=4;teamBase.TakeDamage(25,0,100,point);
+        Assert(f.feed.Single().AppliedDamage==4&&f.feed[0].IsBase&&f.feed[0].CanShowDamageNumber(0),"Base lethal hit reports only remaining four HP");
+        var empty=feedback;empty.AppliedDamage=0;Assert(!empty.CanShowDamageNumber(3),"Zero damage cannot display a number");
+        empty=feedback;empty.HasImpact=false;Assert(!empty.CanShowDamageNumber(3),"Damage without confirmed impact does not invent a position");
+        f=Fixture();for(int i=0;i<10;i++)f.health.TakeDamage(1,0,100,Vector3.zero,point);
+        Assert(f.feed.Count==10&&f.feed.Select(x=>x.Sequence).Distinct().Count()==10&&f.feed.All(x=>x.AppliedDamage==1),"Rapid accepted hits have ten unique damage event identities");
     }
 }

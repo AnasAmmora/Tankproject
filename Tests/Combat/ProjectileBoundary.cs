@@ -9,6 +9,17 @@ namespace UnityEngine
     public class SerializeField:Attribute { }
     public class HeaderAttribute(string text):Attribute { }
     public class TooltipAttribute(string text):Attribute { }
+    public class MinAttribute(float value):Attribute { }
+    public class RangeAttribute(float min,float max):Attribute { }
+    public class CreateAssetMenuAttribute:Attribute { public string menuName; }
+    public class ScriptableObject:Object { }
+    public static class Debug { public static void LogError(string message,Object context) { } }
+    public static class Mathf
+    {
+        public static int Max(int a,int b)=>Math.Max(a,b);
+        public static float Clamp(float value,float min,float max)=>Math.Clamp(value,min,max);
+        public static float Clamp01(float value)=>Math.Clamp(value,0,1);
+    }
     public class Object
     {
         public static int Effects;
@@ -41,6 +52,7 @@ namespace UnityEngine
         public float x=x,y=y,z=z;
         public float sqrMagnitude=>x*x+y*y+z*z; public float magnitude=>MathF.Sqrt(sqrMagnitude);
         public Vector3 normalized=>magnitude>0?this*(1/magnitude):zero;
+        public static float Distance(Vector3 a,Vector3 b)=>(a-b).magnitude;
         public static Vector3 zero=>default; public static Vector3 up=>new(0,1,0);
         public static Vector3 operator +(Vector3 a,Vector3 b)=>new(a.x+b.x,a.y+b.y,a.z+b.z);
         public static Vector3 operator -(Vector3 a,Vector3 b)=>new(a.x-b.x,a.y-b.y,a.z-b.z);
@@ -71,9 +83,10 @@ public class TestVariable<T> { public T Value; }
 public class PlayerState:UnityEngine.Component { public TestVariable<int> teamIndex=new(); }
 public class PlayerHealth:UnityEngine.Component
 {
-    public TestVariable<bool> isDead=new();public ulong NetworkObjectId=101;public int DamageCalls,HP=100;
-    public bool TakeDamage(int damage,int team,ulong shooter,UnityEngine.Vector3 source)
-    { DamageCalls++;HP-=damage;isDead.Value=HP<=0;return true; }
+    public TestVariable<bool> isDead=new();public ulong NetworkObjectId=101;public int DamageCalls,HP=100,LastDamage;
+    public UnityEngine.Vector3 Source,Impact;
+    public bool TakeDamage(int damage,int team,ulong shooter,UnityEngine.Vector3 source,UnityEngine.Vector3 impact)
+    { if(damage<=0)return false; DamageCalls++;LastDamage=damage;Source=source;Impact=impact;HP-=damage;isDead.Value=HP<=0;return true; }
 }
 public class PlayerMovement:UnityEngine.Component
 {
@@ -82,8 +95,8 @@ public class PlayerMovement:UnityEngine.Component
 }
 public class TeamBase:UnityEngine.Component
 {
-    public int teamIndex;public TestVariable<bool> isDestroyed=new();
-    public void TakeDamage(int damage,int team,ulong shooter) { }
+    public int teamIndex,DamageCalls,LastDamage;public TestVariable<bool> isDestroyed=new();
+    public void TakeDamage(int damage,int team,ulong shooter,UnityEngine.Vector3 impact) { DamageCalls++;LastDamage=damage; }
 }
 public class TankCameraShake:UnityEngine.Component { public int Hits;public void ShakeOnHit()=>Hits++; }
 public static class TankShooter

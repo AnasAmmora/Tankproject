@@ -241,44 +241,61 @@ public class MatchManager : NetworkBehaviour
         return IsServer && rules.Running && player != null;
     }
 
-    public void RecordDeath(PlayerHealth health, ulong attackerObjectId, Vector3? sourcePosition = null)
+    public void RecordDeath(PlayerHealth health, ulong attackerObjectId, Vector3? sourcePosition = null,
+        int appliedDamage = 0, Vector3? impactPosition = null)
     {
         if (!IsServer || !rules.RecordDeath(health.OwnerClientId, attackerObjectId, NetworkManager.ServerTime.Time, respawnDelay)) return;
         var player = rules.Players[health.OwnerClientId];
         health.respawnAt.Value = player.respawnAt;
-        EmitCombat(player, attackerObjectId, true, false, sourcePosition);
+        EmitCombat(player, attackerObjectId, true, false, sourcePosition, appliedDamage, impactPosition);
     }
 
-    public void NotifyPlayerDamage(PlayerHealth health, ulong attackerObjectId, Vector3? sourcePosition)
+    public void NotifyPlayerDamage(PlayerHealth health, ulong attackerObjectId, Vector3? sourcePosition,
+        int appliedDamage = 0, Vector3? impactPosition = null)
     {
         if (!IsServer || !rules.Running || !rules.Players.TryGetValue(health.OwnerClientId, out var victim)) return;
-        EmitCombat(victim, attackerObjectId, false, false, sourcePosition);
+        EmitCombat(victim, attackerObjectId, false, false, sourcePosition, appliedDamage, impactPosition);
     }
 
-    public void NotifyBaseDamage(int team, ulong attackerObjectId)
+    public void NotifyBaseDamage(int team, ulong attackerObjectId, int appliedDamage = 0, Vector3? impactPosition = null)
     {
         if (!IsServer || !rules.Running) return;
         EmitCombat(new MatchRules.PlayerRecord { clientId = ulong.MaxValue, team = team, name = "Base" },
-            attackerObjectId, false, true, null);
+            attackerObjectId, false, true, null, appliedDamage, impactPosition);
     }
 
-    private void EmitCombat(MatchRules.PlayerRecord victim, ulong attackerObjectId, bool killed, bool baseHit, Vector3? source)
+    private void EmitCombat(MatchRules.PlayerRecord victim, ulong attackerObjectId, bool killed, bool baseHit,
+        Vector3? source, int appliedDamage, Vector3? impactPosition)
     {
         var attacker = rules.Players.Values.FirstOrDefault(p => p.objectId == attackerObjectId && MatchRules.IsEnemy(p.team, victim.team));
-        CombatFeedbackRpc(++feedbackSequence, victim.clientId, attacker != null ? attacker.clientId : ulong.MaxValue,
-            attacker != null, victim.team, attacker != null ? attacker.team : -1, victim.name,
-            attacker != null ? attacker.name : "", killed, baseHit, source.HasValue, source.GetValueOrDefault());
+        ulong sequence = ++feedbackSequence;
+        // Reuse one confirmation RPC and one event identity. Recipient groups never overlap:
+        // only the shooter's connection receives damage/impact data, including a local host.
+        if (attacker != null && NetworkManager.ConnectedClientsIds.Contains(attacker.clientId))
+            CombatFeedbackRpc(sequence, victim.clientId, attacker.clientId, true, victim.team, attacker.team,
+                victim.name, attacker.name, killed, baseHit, source.HasValue, source.GetValueOrDefault(),
+                Mathf.Max(0, appliedDamage), impactPosition.HasValue, impactPosition.GetValueOrDefault(),
+                RpcTarget.Single(attacker.clientId, RpcTargetUse.Temp));
+
+        ulong[] observers = NetworkManager.ConnectedClientsIds.Where(id => attacker == null || id != attacker.clientId).ToArray();
+        if (observers.Length > 0)
+            CombatFeedbackRpc(sequence, victim.clientId, attacker != null ? attacker.clientId : ulong.MaxValue,
+                attacker != null, victim.team, attacker != null ? attacker.team : -1, victim.name,
+                attacker != null ? attacker.name : "", killed, baseHit, source.HasValue, source.GetValueOrDefault(),
+                0, false, Vector3.zero, RpcTarget.Group(observers, RpcTargetUse.Temp));
     }
 
-    [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
+    [Rpc(SendTo.SpecifiedInParams, InvokePermission = RpcInvokePermission.Server)]
     private void CombatFeedbackRpc(ulong sequence, ulong victim, ulong attacker, bool hasAttacker, int victimTeam,
-        int attackerTeam, string victimName, string attackerName, bool killed, bool baseHit, bool hasSource, Vector3 source)
+        int attackerTeam, string victimName, string attackerName, bool killed, bool baseHit, bool hasSource, Vector3 source,
+        int appliedDamage, bool hasImpact, Vector3 impactPosition, RpcParams rpcParams = default)
     {
         if (sequence <= lastFeedbackSequence) return;
         lastFeedbackSequence = sequence;
         CombatConfirmed?.Invoke(new CombatFeedback { Sequence = sequence, VictimId = victim, AttackerId = attacker,
             HasAttacker = hasAttacker, VictimTeam = victimTeam, AttackerTeam = attackerTeam, VictimName = victimName,
-            AttackerName = attackerName, IsKill = killed, IsBase = baseHit, HasSource = hasSource, Source = source });
+            AttackerName = attackerName, IsKill = killed, IsBase = baseHit, HasSource = hasSource, Source = source,
+            AppliedDamage = appliedDamage, HasImpact = hasImpact, ImpactPosition = impactPosition });
     }
 
     public void RecordBaseDestroyed(int team)

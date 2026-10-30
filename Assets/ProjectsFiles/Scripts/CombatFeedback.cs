@@ -15,4 +15,11 @@ public struct CombatFeedback
     public bool IsBase;
     public bool HasSource;
     public Vector3 Source;
+    // Populated only in the shooter's targeted confirmation. Other recipients get zero/no impact.
+    public int AppliedDamage;
+    public bool HasImpact;
+    public Vector3 ImpactPosition;
+
+    public bool CanShowDamageNumber(ulong localClientId) =>
+        HasAttacker && AttackerId == localClientId && AppliedDamage > 0 && HasImpact;
 }

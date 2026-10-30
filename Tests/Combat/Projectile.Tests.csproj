@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="ProjectileBoundary.cs" /><Compile Include="ProjectileTests.cs" />
     <Compile Include="../../Assets/ProjectsFiles/Scripts/Player/Bullet.cs" />
+    <Compile Include="../../Assets/ProjectsFiles/Scripts/DamageFalloff.cs" />
     <Compile Include="../../Assets/ProjectsFiles/Scripts/Player/ShotPresentation.cs" />
   </ItemGroup>
 </Project>

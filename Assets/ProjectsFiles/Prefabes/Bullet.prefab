@@ -153,10 +153,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cf5c18e2ef17a94e99691176445054f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Bullet
-  ShowTopMostFoldoutHeaderGroup: 1
   speed: 50
   maxLifetime: 5
-  damageAmount: 25
+  damageFalloff: {fileID: 11400000, guid: 4577bef88caa8cd4bbe77b4285e946e3, type: 2}
   launchUpwardForce: 1.5
   impactForce: 50
   impactEffectPrefab: {fileID: 1121192042590650, guid: e1b08032bec16ba4eb1ae23cbd572664, type: 3}

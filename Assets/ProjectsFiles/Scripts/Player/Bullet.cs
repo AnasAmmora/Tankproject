@@ -8,7 +8,7 @@ public class Bullet : MonoBehaviour
     [Header("Projectile Settings")]
     [SerializeField] private float speed = 40f;
     [SerializeField] private float maxLifetime = 5f;
-    [SerializeField] private int damageAmount = 25;
+    [SerializeField] private DamageFalloff damageFalloff;
     [Header("Arc / Trajectory")]
     [SerializeField] private float launchUpwardForce = 6f;
     [Header("Impact Settings")]
@@ -39,6 +39,8 @@ public class Bullet : MonoBehaviour
         col.isTrigger = true;
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         rb.useGravity = true;
+        if (damageFalloff == null)
+            Debug.LogError("Bullet: missing Inspector reference 'damageFalloff'.", this);
     }
 
     public void Launch(Vector3 direction, Collider[] ownerColliders, int teamIndex,
@@ -132,10 +134,11 @@ public class Bullet : MonoBehaviour
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
         {
             if (!match.TryResolveProjectile(shooterId, shotId)) { DestroyBullet(); return; }
+            int damage = damageFalloff != null ? damageFalloff.Calculate(sourcePosition, point) : 0;
             PlayerHealth health = other.GetComponentInParent<PlayerHealth>();
-            bool acceptedPlayerHit = health != null && health.TakeDamage(damageAmount, attackerTeam, shooterId, sourcePosition);
+            bool acceptedPlayerHit = health != null && health.TakeDamage(damage, attackerTeam, shooterId, sourcePosition, point);
             TeamBase teamBase = other.GetComponentInParent<TeamBase>();
-            if (teamBase != null) teamBase.TakeDamage(damageAmount, attackerTeam, shooterId);
+            if (health == null && teamBase != null) teamBase.TakeDamage(damage, attackerTeam, shooterId, point);
             if (acceptedPlayerHit && !health.isDead.Value && tank != null) tank.ApplyHitImpulse(velocity.normalized * impactForce,
                 shooterId, shotId, diagnostics);
             NetworkObject target = other.GetComponentInParent<NetworkObject>();
@@ -160,6 +163,7 @@ public class Bullet : MonoBehaviour
         shooterId = ulong.MaxValue;
         shotId = 0;
         diagnostics = false;
+        sourcePosition = Vector3.zero;
     }
 
     private void DestroyBullet()

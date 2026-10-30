@@ -7,6 +7,7 @@ using UnityEngine;
 using TMPro;
 
 // The single MatchCanvas owns match-wide presentation. No life/score decisions here.
+[DefaultExecutionOrder(300)] // Billboard numbers after TankCameraUpdate's final camera pose (200).
 public class GameplayHud : MonoBehaviour
 {
     public static GameplayHud Instance { get; private set; }
@@ -29,11 +30,14 @@ public class GameplayHud : MonoBehaviour
     [SerializeField] private KillFeedRow feedPrefab;
     [SerializeField, Min(1)] private int maxFeedRows = 4;
     [SerializeField, Min(0.5f)] private float feedLifetime = 5f;
+    [Header("Floating Damage Numbers")]
+    [SerializeField] private FloatingDamageNumber floatingDamageNumberPrefab;
     private MatchManager match;
     private PlayerUI local;
     private MatchRules.PlayerRecord[] roster = Array.Empty<MatchRules.PlayerRecord>();
     private readonly Dictionary<ulong, TeammateRow> teammates = new Dictionary<ulong, TeammateRow>();
     private readonly List<KillFeedRow> feed = new List<KillFeedRow>();
+    private readonly List<FloatingDamageNumber> damageNumbers = new List<FloatingDamageNumber>();
     private float baseUntil;
     private float overtimeUntil;
     private int notifiedBases;
@@ -62,8 +66,10 @@ public class GameplayHud : MonoBehaviour
         ok &= Required(overtimeNotice, nameof(overtimeNotice)); ok &= Required(teammatePanel, nameof(teammatePanel));
         ok &= Required(teammateRows, nameof(teammateRows)); ok &= Required(teammatePrefab, nameof(teammatePrefab));
         ok &= Required(feedRows, nameof(feedRows)); ok &= Required(feedPrefab, nameof(feedPrefab));
+        ok &= Required(floatingDamageNumberPrefab, nameof(floatingDamageNumberPrefab));
         if (teammatePrefab != null) ok &= teammatePrefab.ValidateReferences();
         if (feedPrefab != null) ok &= feedPrefab.ValidateReferences();
+        if (floatingDamageNumberPrefab != null) ok &= floatingDamageNumberPrefab.ValidateReferences();
         return ok;
     }
     private bool Required(UnityEngine.Object value, string field)
@@ -148,7 +154,16 @@ public class GameplayHud : MonoBehaviour
     }
     private void OnCombat(CombatFeedback feedback)
     {
-        if (hidden || !feedback.IsKill || feedback.IsBase) return;
+        if (hidden || !isActiveAndEnabled || MatchResults.LocalFinal != null || MatchHud.ResultsVisible) return;
+        var network = NetworkManager.Singleton;
+        if (network != null && network.IsClient && feedback.CanShowDamageNumber(network.LocalClientId))
+        {
+            GameObject instance = PoolManager.Get(floatingDamageNumberPrefab.gameObject, feedback.ImpactPosition, Quaternion.identity);
+            var number = instance.GetComponent<FloatingDamageNumber>();
+            number.Show(feedback.AppliedDamage, feedback.ImpactPosition, Camera.main);
+            damageNumbers.Add(number);
+        }
+        if (!feedback.IsKill || feedback.IsBase) return;
         var row = Instantiate(feedPrefab, feedRows);
         row.Bind(feedback, feedLifetime);
         feed.Add(row);
@@ -210,6 +225,8 @@ public class GameplayHud : MonoBehaviour
     }
     private void UnbindMatch()
     {
+        foreach (var number in damageNumbers) if (number != null) PoolManager.Release(number.gameObject);
+        damageNumbers.Clear();
         if (match != null)
         {
             match.phase.OnValueChanged -= OnPhase; match.destroyedBases.OnValueChanged -= OnBases;
@@ -217,6 +234,19 @@ public class GameplayHud : MonoBehaviour
         }
         match = null;
     }
+    private void LateUpdate()
+    {
+        if (hidden || !configured) return;
+        Camera view = Camera.main;
+        for (int i = damageNumbers.Count - 1; i >= 0; i--)
+        {
+            var number = damageNumbers[i];
+            if (number != null && number.Tick(Time.unscaledDeltaTime, view)) continue;
+            if (number != null) PoolManager.Release(number.gameObject);
+            damageNumbers.RemoveAt(i);
+        }
+    }
+    private void OnDisable() => UnbindMatch();
     private void OnDestroy()
     {
         PlayerHealth.Spawned -= OnPlayerSpawned;

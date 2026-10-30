@@ -34,17 +34,19 @@ public class PlayerHealth : NetworkBehaviour
         ApplyLifePresentation(isDead.Value);
         Spawned?.Invoke(this);
     }
-    public bool TakeDamage(int damage, int attackerTeam, ulong attackerObject = ulong.MaxValue, Vector3? sourcePosition = null)
+    public bool TakeDamage(int damage, int attackerTeam, ulong attackerObject = ulong.MaxValue,
+        Vector3? sourcePosition = null, Vector3? impactPosition = null)
     {
-        if (!IsServer || isDead.Value || damage <= 0 || MatchManager.Instance == null ||
+        if (!IsServer || isDead.Value || currentHealth.Value <= 0 || damage <= 0 || MatchManager.Instance == null ||
             !MatchManager.Instance.CanDamage(attackerTeam, playerState.teamIndex.Value)) return false;
-        currentHealth.Value = Mathf.Max(0, currentHealth.Value - damage);
+        int appliedDamage = Mathf.Min(currentHealth.Value, damage);
+        currentHealth.Value -= appliedDamage;
         if (currentHealth.Value == 0)
         {
             isDead.Value = true;
-            MatchManager.Instance.RecordDeath(this, attackerObject, sourcePosition);
+            MatchManager.Instance.RecordDeath(this, attackerObject, sourcePosition, appliedDamage, impactPosition);
         }
-        else MatchManager.Instance.NotifyPlayerDamage(this, attackerObject, sourcePosition);
+        else MatchManager.Instance.NotifyPlayerDamage(this, attackerObject, sourcePosition, appliedDamage, impactPosition);
         return true;
     }
     private void OnDeadChanged(bool previous, bool current) => ApplyLifePresentation(current);

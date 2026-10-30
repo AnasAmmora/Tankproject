@@ -28,7 +28,8 @@ static partial class Program
         foreach(string field in new[]{"timer","phaseLabel","lifeStatus"})Set(hud,field,Component<TMP_Text>());
         foreach(string field in new[]{"timerAccent","baseNotice","overtimeNotice"})Set(hud,field,Component<CanvasGroup>());
         Set(hud,"teammateRows",new GameObject().transform);Set(hud,"feedRows",new GameObject().transform);
-        Set(hud,"teammatePrefab",Mate());Set(hud,"feedPrefab",Feed());Call(hud,"Awake");return hud;
+        Set(hud,"teammatePrefab",Mate());Set(hud,"feedPrefab",Feed());
+        Set(hud,"floatingDamageNumberPrefab",Component<FloatingDamageNumber>());Call(hud,"Awake");return hud;
     }
     static PlayerUI Owner()
     {
