@@ -1,0 +1,17 @@
+// Pass this method body to Unity MCP execute_code while the project is open.
+var type = System.AppDomain.CurrentDomain.GetAssemblies()
+    .Select(a => a.GetType("UnityEditor.ShaderGraph.ShaderGraphImporter")).First(t => t != null);
+var method = type.GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+    .Single(m => m.Name == "GetShaderText" && m.GetParameters().Length == 4 && m.GetParameters()[3].IsOut);
+string directory = System.IO.Path.GetFullPath(System.IO.Path.Combine(UnityEngine.Application.dataPath, "../Temp/CurvedWorld"));
+System.IO.Directory.CreateDirectory(directory);
+foreach (var pair in new[] {
+    new[] { "Water", "Assets/ProjectsFiles/ExtarnalAsset/Simple Water Shader Package/WaterShader/Water.shadergraph" },
+    new[] { "Rock", "Assets/ProjectsFiles/ExtarnalAsset/Simple Water Shader Package/Demo/Shaders/Rock.shadergraph" }
+})
+{
+    var arguments = new object[] { pair[1], null, null, null };
+    string source = (string)method.Invoke(null, arguments);
+    System.IO.File.WriteAllText(System.IO.Path.Combine(directory, pair[0] + ".shader"), source);
+}
+return "Exported Water and Rock shader snapshots to " + directory;

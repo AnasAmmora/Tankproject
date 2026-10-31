@@ -1,0 +1,1 @@
+Pattern same shader time=68.77646 meanAbsoluteChannelError=0.00279835390946502 changedPixels=2835 of 518400 maxRGBSumDifference=16

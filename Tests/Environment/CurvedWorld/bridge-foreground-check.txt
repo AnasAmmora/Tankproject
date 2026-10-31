@@ -1,0 +1,1 @@
+Bridge foreground crop: mean channel error=0.0021455439814814813; changed pixels=812 / 230400

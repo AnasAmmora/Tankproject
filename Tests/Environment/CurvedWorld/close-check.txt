@@ -1,0 +1,4 @@
+bridge comparison=active sameTime=197.872 meanChannelError=0.573913966049383 changedPixels=29797 maxRGBSum=379
+bridge comparison=disabled sameTime=197.872 meanChannelError=0 changedPixels=0 maxRGBSum=0
+water comparison=active sameTime=197.872 meanChannelError=0.00323688271604938 changedPixels=3118 maxRGBSum=16
+water comparison=disabled sameTime=197.872 meanChannelError=0 changedPixels=0 maxRGBSum=0

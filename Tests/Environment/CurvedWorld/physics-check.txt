@@ -1,0 +1,14 @@
+Real NGO host; spawned Player prefab remapped to curved shader. Existing movement/input disabled only on stationary fixture.
+confirmed damage=25 point=(18.86000, 1.95255, 4.13000)
+confirmed damage=23 point=(18.86000, 1.84472, 4.09057)
+confirmed damage=12 point=(18.86000, 1.82935, 4.08000)
+confirmed damage=5 point=(18.86000, 1.81459, 4.16669)
+confirmed damage=25 point=(18.86000, 1.95255, 4.13000)
+range=10 active/off impact delta=0 unchanged aim direction
+confirmed damage=23 point=(18.86000, 1.84472, 4.09057)
+range=20 active/off impact delta=0 unchanged aim direction
+confirmed damage=12 point=(18.86000, 1.82935, 4.08000)
+range=40 active/off impact delta=0 unchanged aim direction
+confirmed damage=5 point=(18.86000, 1.81459, 4.16669)
+range=60 active/off impact delta=0 unchanged aim direction
+PASS: 8 real pooled Bullet flights, PhysX contacts and authoritative base damage; active/off aim equal at 10/20/40/60 units; no synthetic impact callbacks.

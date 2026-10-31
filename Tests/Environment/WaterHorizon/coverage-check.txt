@@ -1,0 +1,1 @@
+Visible water-plane intersections tested=2376 outside surface=0 max sampled horizontal radius=1622.66; 16:9,21:9,32:9; eight headings, five pitch values, three camera positions; far clip=1000

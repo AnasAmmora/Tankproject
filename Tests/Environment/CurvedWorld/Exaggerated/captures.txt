@@ -1,0 +1,12 @@
+off-bridge-0 params=(0.00000, 5.00000, 0.00000, 0.00000) calls=105 tris=95220 vertices=87869
+off-bridge-90 params=(0.00000, 5.00000, 0.00000, 0.00000) calls=199 tris=202604 vertices=192361
+off-shore-0 params=(0.00000, 5.00000, 0.00000, 0.00000) calls=22 tris=8092 vertices=8783
+off-shore-90 params=(0.00000, 5.00000, 0.00000, 0.00000) calls=28 tris=11212 vertices=10517
+off-elevated-0 params=(0.00000, 5.00000, 0.00000, 0.00000) calls=42 tris=55436 vertices=54295
+off-elevated-90 params=(0.00000, 5.00000, 0.00000, 0.00000) calls=120 tris=108730 vertices=105425
+on-bridge-0 params=(0.04000, 5.00000, 0.00000, 0.00000) calls=395 tris=272412 vertices=211010
+on-bridge-90 params=(0.04000, 5.00000, 0.00000, 0.00000) calls=467 tris=392946 vertices=335716
+on-shore-0 params=(0.04000, 5.00000, 0.00000, 0.00000) calls=94 tris=44584 vertices=29643
+on-shore-90 params=(0.04000, 5.00000, 0.00000, 0.00000) calls=90 tris=42560 vertices=28487
+on-elevated-0 params=(0.04000, 5.00000, 0.00000, 0.00000) calls=322 tris=196640 vertices=135267
+on-elevated-90 params=(0.04000, 5.00000, 0.00000, 0.00000) calls=391 tris=263426 vertices=203556

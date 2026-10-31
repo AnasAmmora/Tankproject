@@ -1,0 +1,8 @@
+Saved/reopened GameScene, dirty=False
+controls: True strength=6E-05 start=300
+renderer bindings=65 tank mappings=2
+camera count=1 far=1000 target=
+water collider vertices=121 original visual=125 y=0.2
+fog=True Linear 120..750 color=RGBA(0.450, 0.500, 0.520, 1.000)
+GPU=NVIDIA GeForce GTX 1650 Direct3D12
+No shader compiler errors
