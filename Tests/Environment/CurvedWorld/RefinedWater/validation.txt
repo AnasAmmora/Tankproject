@@ -1,0 +1,7 @@
+Static outer-water refinement: 177 -> 12485 vertices; 344 -> 24712 triangles.
+Core: original 121 vertices and first 200 triangles unchanged. No interior cracks/reversed faces. Boundary edges=256; maximum edge=7.975645; UV affine error=1.06624E-06
+(68.75, 4.30, 6.76) before maximum centroid interpolation error=5.504488
+(68.75, 4.30, 6.76) after maximum centroid interpolation error=0.1056834
+(75.67, 2.77, 10.41) before maximum centroid interpolation error=5.9161
+(75.67, 2.77, 10.41) after maximum centroid interpolation error=0.1015357
+Unchanged bounds=Center: (0.00, 0.00, 0.00), Extents: (22.36, 0.10, 52.02); bend=True/0.015/15; collider vertices=121; submeshes=1

@@ -1,0 +1,132 @@
+// Execute as a Unity MCP C# method body in GameScene Edit Mode.
+// Static conforming edge refinement; no runtime tessellation or CPU deformation.
+var effect = UnityEngine.Object.FindAnyObjectByType<CurvedWorldView>();
+if (effect == null || effect.gameObject.scene.name != "GameScene" || UnityEditor.EditorApplication.isPlaying)
+    throw new System.Exception("Requires GameScene in Edit Mode.");
+var serialized = new UnityEditor.SerializedObject(effect);
+var filter = (UnityEngine.MeshFilter)serialized.FindProperty("waterSurface").objectReferenceValue;
+var mesh = (UnityEngine.Mesh)serialized.FindProperty("curvedWaterMesh").objectReferenceValue;
+if (mesh.subMeshCount != 1) throw new System.Exception("Expected one water submesh.");
+var originalVertices = mesh.vertices;
+var originalUV = mesh.uv;
+var originalTriangles = mesh.triangles;
+var vertices = new System.Collections.Generic.List<UnityEngine.Vector3>(originalVertices);
+var normals = new System.Collections.Generic.List<UnityEngine.Vector3>(mesh.normals);
+var tangents = new System.Collections.Generic.List<UnityEngine.Vector4>(mesh.tangents);
+var uv = new System.Collections.Generic.List<UnityEngine.Vector2>(originalUV);
+var triangles = new System.Collections.Generic.List<int>(originalTriangles);
+var oldBounds = mesh.bounds;
+var worldMatrix = filter.transform.localToWorldMatrix;
+const float maxEdgeLength = 8f;
+System.Func<int, int, long> edgeKey = (a, b) => ((long)UnityEngine.Mathf.Min(a,b) << 32) | (uint)UnityEngine.Mathf.Max(a,b);
+for (int pass = 0; pass < 12; pass++)
+{
+    var mids = new System.Collections.Generic.Dictionary<long, int>();
+    for (int i = 0; i < triangles.Count; i += 3)
+    {
+        if (triangles[i] < 121 && triangles[i+1] < 121 && triangles[i+2] < 121) continue;
+        for (int j = 0; j < 3; j++)
+        {
+            int a = triangles[i+j], b = triangles[i+(j+1)%3];
+            // Protect the authored core including its boundary edges.
+            if (a < 121 && b < 121) continue;
+            if (worldMatrix.MultiplyVector(vertices[a]-vertices[b]).sqrMagnitude <= maxEdgeLength*maxEdgeLength + 0.0001f) continue;
+            long key = edgeKey(a,b);
+            if (mids.ContainsKey(key)) continue;
+            mids.Add(key, vertices.Count);
+            vertices.Add((vertices[a]+vertices[b])*0.5f);
+            normals.Add((normals[a]+normals[b]).normalized);
+            tangents.Add((tangents[a]+tangents[b])*0.5f);
+            uv.Add((uv[a]+uv[b])*0.5f);
+        }
+    }
+    if (mids.Count == 0) break;
+    var refined = new System.Collections.Generic.List<int>(triangles.Count*2);
+    System.Action<int,int,int> add = (a,b,c) => { refined.Add(a); refined.Add(b); refined.Add(c); };
+    for (int i = 0; i < triangles.Count; i += 3)
+    {
+        int a=triangles[i], b=triangles[i+1], c=triangles[i+2];
+        int ab,bc,ca;
+        if (!mids.TryGetValue(edgeKey(a,b),out ab)) ab=-1;
+        if (!mids.TryGetValue(edgeKey(b,c),out bc)) bc=-1;
+        if (!mids.TryGetValue(edgeKey(c,a),out ca)) ca=-1;
+        int count=(ab>=0?1:0)+(bc>=0?1:0)+(ca>=0?1:0);
+        if (count==0) add(a,b,c);
+        else if (count==3) { add(a,ab,ca); add(ab,b,bc); add(ca,bc,c); add(ab,bc,ca); }
+        else if (count==1)
+        {
+            if(ab>=0) {add(a,ab,c);add(ab,b,c);}
+            else if(bc>=0) {add(b,bc,a);add(bc,c,a);}
+            else {add(c,ca,b);add(ca,a,b);}
+        }
+        else
+        {
+            // Rotate into the canonical case: split AB and BC, leave CA intact.
+            if(ab<0) {int oldA=a; a=b;b=c;c=oldA;ab=bc;bc=ca;}
+            else if(bc<0) {int oldA=a;int oldB=b;a=c;b=oldA;c=oldB;bc=ab;ab=ca;}
+            add(b,bc,ab);add(a,ab,c);add(ab,bc,c);
+        }
+    }
+    triangles=refined;
+}
+// Validate before touching the persistent asset.
+for(int i=0;i<121;i++)
+    if(vertices[i]!=originalVertices[i] || uv[i]!=originalUV[i]) throw new System.Exception("Core vertex or UV changed.");
+for(int i=0;i<600;i++)
+    if(triangles[i]!=originalTriangles[i]) throw new System.Exception("Core topology changed.");
+var edgeUses = new System.Collections.Generic.Dictionary<long,int>();
+float maxEdge=0f, maxUVError=0f;
+for(int i=0;i<vertices.Count;i++)
+    maxUVError=UnityEngine.Mathf.Max(maxUVError,UnityEngine.Vector2.Distance(uv[i],new UnityEngine.Vector2((5f-vertices[i].x)/10f,(5f-vertices[i].z)/10f)));
+for(int i=0;i<triangles.Count;i+=3)
+{
+    var a=vertices[triangles[i]];var b=vertices[triangles[i+1]];var c=vertices[triangles[i+2]];
+    if(UnityEngine.Vector3.Cross(b-a,c-a).y<=0f) throw new System.Exception("Degenerate or reversed face.");
+    for(int j=0;j<3;j++)
+    {
+        int x=triangles[i+j],y=triangles[i+(j+1)%3];long key=edgeKey(x,y);
+        if(!edgeUses.ContainsKey(key)) edgeUses.Add(key,0);edgeUses[key]++;
+        maxEdge=UnityEngine.Mathf.Max(maxEdge,worldMatrix.MultiplyVector(vertices[x]-vertices[y]).magnitude);
+    }
+}
+int boundaries=0;
+foreach(var pair in edgeUses)
+{
+    if(pair.Value==2)continue;
+    if(pair.Value!=1)throw new System.Exception("Non-manifold edge.");
+    boundaries++;
+    int a=(int)(pair.Key>>32),b=(int)(pair.Key&0xffffffffL);
+    var p=vertices[a];var q=vertices[b];
+    bool outside=(UnityEngine.Mathf.Abs(p.x-oldBounds.min.x)<0.001f && UnityEngine.Mathf.Abs(q.x-oldBounds.min.x)<0.001f) ||
+        (UnityEngine.Mathf.Abs(p.x-oldBounds.max.x)<0.001f && UnityEngine.Mathf.Abs(q.x-oldBounds.max.x)<0.001f) ||
+        (UnityEngine.Mathf.Abs(p.z-oldBounds.min.z)<0.001f && UnityEngine.Mathf.Abs(q.z-oldBounds.min.z)<0.001f) ||
+        (UnityEngine.Mathf.Abs(p.z-oldBounds.max.z)<0.001f && UnityEngine.Mathf.Abs(q.z-oldBounds.max.z)<0.001f);
+    if(!outside)throw new System.Exception("Interior crack detected.");
+}
+if(maxEdge>maxEdgeLength+0.001f || maxUVError>0.0001f)throw new System.Exception("Refinement or UV validation failed.");
+var report=new System.Text.StringBuilder();
+report.AppendLine("Static outer-water refinement: "+originalVertices.Length+" -> "+vertices.Count+" vertices; "+originalTriangles.Length/3+" -> "+triangles.Count/3+" triangles.");
+report.AppendLine("Core: original 121 vertices and first 200 triangles unchanged. No interior cracks/reversed faces. Boundary edges="+boundaries+"; maximum edge="+maxEdge+"; UV affine error="+maxUVError);
+foreach(var origin in new UnityEngine.Vector3[]{new UnityEngine.Vector3(68.75f,4.3f,6.76f),new UnityEngine.Vector3(75.67f,2.77f,10.41f)})
+{
+    System.Func<UnityEngine.Vector3,float> drop=(p)=>{var delta=p-origin;float q=UnityEngine.Mathf.Max(0f,new UnityEngine.Vector2(delta.x,delta.z).magnitude-effect.BendStartDistance);float raw=effect.BendStrength*q*q*q/(q+50f);return raw/(1f+raw/64f);};
+    foreach(bool after in new bool[]{false,true})
+    {
+        var vv=after?vertices:new System.Collections.Generic.List<UnityEngine.Vector3>(originalVertices);
+        var tt=after?triangles:new System.Collections.Generic.List<int>(originalTriangles);
+        float error=0f;
+        for(int i=0;i<tt.Count;i+=3){var a=worldMatrix.MultiplyPoint3x4(vv[tt[i]]);var b=worldMatrix.MultiplyPoint3x4(vv[tt[i+1]]);var c=worldMatrix.MultiplyPoint3x4(vv[tt[i+2]]);error=UnityEngine.Mathf.Max(error,UnityEngine.Mathf.Abs((drop(a)+drop(b)+drop(c))/3f-drop((a+b+c)/3f)));}
+        report.AppendLine(origin+" "+(after?"after":"before")+" maximum centroid interpolation error="+error);
+    }
+}
+UnityEditor.Undo.RecordObjects(new UnityEngine.Object[]{mesh,effect},"Refine outer curved water mesh");
+bool wasEnabled=effect.enabled;
+effect.enabled=false;
+mesh.SetVertices(vertices);mesh.SetNormals(normals);mesh.SetTangents(tangents);mesh.SetUVs(0,uv);mesh.SetTriangles(triangles,0);mesh.bounds=oldBounds;
+effect.enabled=wasEnabled;
+UnityEditor.EditorUtility.SetDirty(mesh);
+UnityEditor.AssetDatabase.SaveAssets();
+UnityEditor.SceneView.RepaintAll();
+report.AppendLine("Unchanged bounds="+mesh.bounds+"; bend="+effect.IsActive+"/"+effect.BendStrength+"/"+effect.BendStartDistance+"; collider vertices="+filter.GetComponent<UnityEngine.MeshCollider>().sharedMesh.vertexCount+"; submeshes="+mesh.subMeshCount);
+System.IO.File.WriteAllText("Tests/Environment/CurvedWorld/RefinedWater/validation.txt",report.ToString());
+return report.ToString();
