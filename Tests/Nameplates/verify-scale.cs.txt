@@ -1,0 +1,57 @@
+// Unity MCP Play Mode checks against an instance of the actual authored Player prefab.
+if(!UnityEditor.EditorApplication.isPlaying)throw new System.Exception("Requires Play Mode.");
+var prefab=UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.GameObject>("Assets/ProjectsFiles/Prefabes/Player.prefab");
+var root=UnityEngine.Object.Instantiate(prefab);
+var cameraObject=new UnityEngine.GameObject("Nameplate scale test camera");
+var replacementObject=new UnityEngine.GameObject("Nameplate replacement test camera");
+int checks=0;
+System.Action<bool,string> check=(ok,message)=>{if(!ok)throw new System.Exception(message);checks++;};
+try
+{
+    var display=root.GetComponentInChildren<PlayerNameDisplay>(true);
+    var scale=display.GetComponent<PlayerNameDistanceScale>();
+    var text=display.GetComponentInChildren<TMPro.TMP_Text>(true);
+    var visual=(UnityEngine.Transform)new UnityEditor.SerializedObject(scale).FindProperty("nameVisual").objectReferenceValue;
+    var baseline=visual.localScale;
+    var actorScale=root.transform.localScale;
+    var canvasScale=display.transform.localScale;
+    var camera=cameraObject.AddComponent<UnityEngine.Camera>();camera.enabled=true;
+    var replacement=replacementObject.AddComponent<UnityEngine.Camera>();replacement.enabled=true;
+    foreach(float distance in new float[]{0f,3f,5f,10.5f,16f,18f,18.01f,36f,80f})
+    {
+        camera.transform.position=visual.position+UnityEngine.Vector3.forward*distance;
+        scale.ResetPresentation();bool visible=scale.Present(camera);
+        bool expectedVisible=distance<=18f;
+        check(visible==expectedVisible,"Visibility cutoff at "+distance);
+        float expected=!expectedVisible?1f:distance<=5f?6f:distance>=16f?19.2f:12.6f;
+        check(UnityEngine.Vector3.Distance(visual.localScale,baseline*expected)<0.001f,"Distance scaling at "+distance);
+        for(int i=0;i<100;i++)scale.Present(camera);
+        check(UnityEngine.Vector3.Distance(visual.localScale,baseline*expected)<0.001f,"No cumulative scale at "+distance);
+    }
+    // A camera change snaps to the new viewer rather than inheriting old smoothing.
+    replacement.transform.position=visual.position+UnityEngine.Vector3.forward*3;
+    scale.Present(replacement);
+    check(visual.localScale==baseline*6,"Camera replacement from hidden to nearby");
+    check(!scale.Present(null),"Missing camera hides the label");
+    check(visual.localScale==baseline*6,"Missing camera retains valid scale");
+    scale.enabled=false;
+    check(visual.localScale==baseline,"Disable restores authored baseline");
+    scale.enabled=true;check(!scale.Present(camera),"Re-enable outside range remains hidden");
+    check(visual.localScale==baseline,"Re-enable uses original baseline");
+    camera.transform.position=visual.position+UnityEngine.Vector3.forward*16;
+    scale.Present(camera);
+    check(UnityEngine.Vector3.Distance(visual.localScale,baseline*19.2f)<0.001f,"Returning inside range uses readable clamped size");
+    scale.ResetPresentation();
+    check(visual.localScale==baseline,"Despawn/reset restores baseline");
+    check(root.transform.localScale==actorScale && display.transform.localScale==canvasScale,"Tank and Canvas unaffected");
+    check(text.fontSharedMaterial==prefab.GetComponentInChildren<PlayerNameDisplay>(true).GetComponentInChildren<TMPro.TMP_Text>(true).fontSharedMaterial,"Shared material preserved");
+    var report="PASS "+checks+" Unity component checks for current 18-unit visibility limit: near/intermediate/clamped size, exact boundary and just beyond, 100 repeated calls per distance, missing/replacement camera, hide/reveal, disable/re-enable/reset, tank/Canvas/material isolation.";
+    System.IO.File.WriteAllText("Tests/Nameplates/range-checks.txt",report);
+    return report;
+}
+finally
+{
+    UnityEngine.Object.DestroyImmediate(root);
+    UnityEngine.Object.DestroyImmediate(cameraObject);
+    UnityEngine.Object.DestroyImmediate(replacementObject);
+}

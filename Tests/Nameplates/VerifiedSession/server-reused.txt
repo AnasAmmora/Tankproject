@@ -1,0 +1,1 @@
+Host reused B's NetworkObject via Despawn(false) / SpawnAsPlayerObject(1).

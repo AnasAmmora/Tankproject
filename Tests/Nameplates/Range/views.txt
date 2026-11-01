@@ -1,0 +1,2 @@
+center-hidden cameraX=44 nameVisible=False distance=24.75002
+edge-visible cameraX=52 nameVisible=True distance=16.75002

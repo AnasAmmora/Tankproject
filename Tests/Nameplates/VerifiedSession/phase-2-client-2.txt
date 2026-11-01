@@ -1,0 +1,5 @@
+role=client localClient=2 phase=2 peers=3 camera=Validation Replacement Gameplay Camera position=(69.00, 3.36, 7.00)
+player=0 name=Player A owner=False visible=True distance=48.000 textScale=(24.00, 24.00, 24.00) expected=24.000 rootScale=(10.00, 10.00, 10.00) canvasScale=(1.00, 1.00, 1.00) color=RGBA(1.000, 1.000, 1.000, 1.000) pass=True
+player=1 name=Player B owner=False visible=True distance=45.044 textScale=(24.00, 24.00, 24.00) expected=24.000 rootScale=(10.00, 10.00, 10.00) canvasScale=(1.00, 1.00, 1.00) color=RGBA(1.000, 1.000, 1.000, 1.000) pass=True
+player=2 name=PlayerName owner=True visible=False distance=1.000 textScale=(1.00, 1.00, 1.00) expected=4.000 rootScale=(10.00, 10.00, 10.00) canvasScale=(1.00, 1.00, 1.00) color=RGBA(1.000, 1.000, 1.000, 1.000) pass=True
+PASS

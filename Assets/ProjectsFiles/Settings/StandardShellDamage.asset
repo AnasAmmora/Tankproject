@@ -13,6 +13,6 @@ MonoBehaviour:
   m_Name: StandardShellDamage
   m_EditorClassIdentifier: Assembly-CSharp::DamageFalloff
   baseDamage: 25
-  fullDamageDistance: 10
-  maximumFalloffDistance: 60.01
-  minimumDamageMultiplier: 0.2
+  fullDamageDistance: 5
+  maximumFalloffDistance: 100
+  minimumDamageMultiplier: 0.05

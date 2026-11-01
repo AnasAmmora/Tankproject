@@ -1,0 +1,1 @@
+PASS 19 Unity component checks: near/intermediate/far clamps, 100 repeated calls per distance, missing/replacement camera, disable/re-enable/reset, tank/Canvas/material isolation.

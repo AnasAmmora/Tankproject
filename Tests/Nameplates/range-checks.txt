@@ -1,0 +1,1 @@
+PASS 37 Unity component checks for current 18-unit visibility limit: near/intermediate/clamped size, exact boundary and just beyond, 100 repeated calls per distance, missing/replacement camera, hide/reveal, disable/re-enable/reset, tank/Canvas/material isolation.

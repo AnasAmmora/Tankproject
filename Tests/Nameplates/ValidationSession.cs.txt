@@ -1,0 +1,175 @@
+// Temporary Editor-only integration fixture. Copy into an Editor folder to compile.
+// The fixture runs only while the validation-root EditorPref and phase file exist.
+#if UNITY_EDITOR
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using UnityEditor;
+using UnityEngine;
+using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
+
+[InitializeOnLoad]
+internal static class NameplateValidationSession
+{
+    const string Preference = "Tankproject.Nameplates.ValidationRoot";
+    static bool started, positioned, recorded, replaced;
+    static int phase = -1, samples;
+    static double began, changed, nextPoll;
+    static string folder;
+    static NameplateValidationSession() { EditorApplication.update += Tick; }
+    static bool IsMain()
+    {
+        var assembly=AppDomain.CurrentDomain.GetAssemblies().First(a=>a.GetName().Name=="UnityEditor.MultiplayerModule");
+        return !(bool)assembly.GetType("Unity.Multiplayer.PlayMode.Editor.VirtualProjectsEditor").GetProperty("IsClone",BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Static).GetValue(null);
+    }
+
+    static void Tick()
+    {
+        var location=AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/ProjectsFiles/Editor/NameplateValidationRoot.txt");
+        folder = location!=null?location.text.Trim():EditorPrefs.GetString(Preference, "");
+        if (string.IsNullOrEmpty(folder) || !File.Exists(Path.Combine(folder, "phase.txt"))) return;
+        if (!EditorApplication.isPlaying)
+        {
+            started=false;positioned=false;phase=-1;began=EditorApplication.timeSinceStartup;
+            if(!IsMain()&&!EditorApplication.isCompiling&&!EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                if(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name!="GameScene")
+                    UnityEditor.SceneManagement.EditorSceneManager.OpenScene("Assets/ProjectsFiles/Scenes/GameScene.unity");
+                EditorApplication.isPlaying=true;
+            }
+            return;
+        }
+        if (EditorApplication.isCompiling) return;
+        EditorApplication.QueuePlayerLoopUpdate();
+        try { Run(); }
+        catch(Exception error) { File.WriteAllText(Path.Combine(folder,"error-"+System.Diagnostics.Process.GetCurrentProcess().Id+".txt"),error.ToString()); }
+    }
+
+    static void Run()
+    {
+        bool main=IsMain();
+        var network = NetworkManager.Singleton;
+        if (!started)
+        {
+            if (EditorApplication.timeSinceStartup-began < 2) return;
+            Application.runInBackground = true;
+            if (network == null)
+            {
+                var prefab=AssetDatabase.LoadAssetAtPath<GameObject>("Assets/ProjectsFiles/Prefabes/Managers/NetworkManager.prefab");
+                network=UnityEngine.Object.Instantiate(prefab).GetComponent<NetworkManager>();
+            }
+            network.GetComponent<MatchConnectionCoordinator>().enabled=false;
+            network.NetworkConfig.ConnectionApproval=false;
+            network.NetworkConfig.EnableSceneManagement=false;
+            // Isolate player-prefab transport from scene-object synchronization and
+            // the lobby/match state machine; environment meshes stay in the scene.
+            foreach(var sceneObject in UnityEngine.Object.FindObjectsByType<NetworkObject>(FindObjectsSortMode.None))
+                if(!sceneObject.IsSpawned)sceneObject.gameObject.SetActive(false);
+            network.GetComponent<UnityTransport>().SetConnectionData("127.0.0.1",17877,"127.0.0.1");
+            bool ok=main?network.StartHost():network.StartClient();
+            if(!ok) throw new Exception("Could not start validation transport.");
+            started=true;
+        }
+        if(network == null || !network.IsConnectedClient) return;
+        if(network.IsServer)
+        {
+            foreach(var client in network.ConnectedClientsList)
+                if(client.PlayerObject == null)
+                    UnityEngine.Object.Instantiate(network.NetworkConfig.PlayerPrefab).GetComponent<NetworkObject>().SpawnAsPlayerObject(client.ClientId);
+        }
+        var local=network.LocalClient.PlayerObject;
+        if(local==null) return;
+        if(EditorApplication.timeSinceStartup>=nextPoll)
+        {
+            nextPoll=EditorApplication.timeSinceStartup+0.25;
+            int requested;
+            if(!int.TryParse(File.ReadAllText(Path.Combine(folder,"phase.txt")).Trim(),out requested))return;
+            if(requested!=phase) { phase=requested;changed=EditorApplication.timeSinceStartup;positioned=false;recorded=false;samples=0; }
+        }
+        if(phase<0) return;
+        ulong id=network.LocalClientId;
+        if(!local.GetComponent<PlayerLook>().LocalCameraReady)return;
+        Vector3 fixedPosition=id==0?new Vector3(21,3.11f,7):id==1?new Vector3(24,3.11f,9):new Vector3(68,3.11f,7);
+        if(phase==1 && id==2)fixedPosition=new Vector3(22,3.11f,10);
+        if(!positioned)
+        {
+            local.GetComponent<PlayerMovement>().RelocateForReturn(fixedPosition,Quaternion.identity);
+            local.GetComponent<PlayerState>().playerName.Value="Player "+(id==0?"A":id==1?"B":"C");
+            var look=local.GetComponent<PlayerLook>();
+            typeof(PlayerLook).GetField("cameraYaw",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(look,id==2?270f:90f);
+            typeof(PlayerLook).GetField("cameraPitch",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(look,0f);
+            positioned=true;
+        }
+        local.GetComponent<Rigidbody>().isKinematic=true;
+        // Keep the test formation fixed after spawn/teleport initialization.
+        local.transform.position=fixedPosition;
+        local.GetComponent<Rigidbody>().position=fixedPosition;
+        var players=UnityEngine.Object.FindObjectsByType<PlayerState>(FindObjectsSortMode.None).Where(p=>p.IsSpawned).ToArray();
+        if(players.Length!=3 || !local.GetComponent<PlayerLook>().LocalCameraReady || EditorApplication.timeSinceStartup-changed<5) return;
+        var camera=Camera.main;
+        if(camera==null) return;
+        if(phase==2 && !replaced)
+        {
+            var replacement=UnityEngine.Object.Instantiate(camera.gameObject);
+            replacement.name="Validation Replacement Gameplay Camera";
+            camera.gameObject.SetActive(false);
+            camera=replacement.GetComponent<Camera>();
+            replaced=true;
+            changed=EditorApplication.timeSinceStartup;
+            return;
+        }
+        if(phase==3 && network.IsServer && !File.Exists(Path.Combine(folder,"server-reused.txt")))
+        {
+            var player=network.ConnectedClients[1].PlayerObject;
+            player.Despawn(false);
+            player.SpawnAsPlayerObject(1);
+            File.WriteAllText(Path.Combine(folder,"server-reused.txt"),"Host reused B's NetworkObject via Despawn(false) / SpawnAsPlayerObject(1).");
+            changed=EditorApplication.timeSinceStartup;
+            return;
+        }
+        if(recorded)return;
+        // Explicit camera renders exercise the actual SRP callback in background editors.
+        var target=RenderTexture.GetTemporary(960,540,24);
+        var previousTarget=camera.targetTexture;
+        var previousActive=RenderTexture.active;
+        try
+        {
+            camera.targetTexture=target;camera.Render();
+            if(++samples<30)return;
+            var report=new StringBuilder();
+            report.AppendLine("role="+(network.IsHost?"host":"client")+" localClient="+id+" phase="+phase+" peers="+players.Length+" camera="+camera.name+" position="+camera.transform.position);
+            bool pass=true;
+            foreach(var player in players.OrderBy(p=>p.OwnerClientId))
+            {
+                var display=player.GetComponentInChildren<PlayerNameDisplay>(true);
+                var text=display.GetComponentInChildren<TMPro.TMP_Text>(true);
+                var canvas=display.GetComponent<Canvas>();
+                var visual=(Transform)new SerializedObject(display.GetComponent<PlayerNameDistanceScale>()).FindProperty("nameVisual").objectReferenceValue;
+                float distance=Vector3.Distance(camera.transform.position,text.transform.position);
+                float expected=6*Mathf.Lerp(1,3.2f,Mathf.InverseLerp(5,16,distance));
+                bool inRange=distance<=18f;
+                bool owner=player.IsOwner;
+                bool valid=owner?!canvas.enabled:canvas.enabled==inRange && (!inRange || Mathf.Abs(visual.localScale.x-expected)<0.15f);
+                valid &= player.transform.localScale==new Vector3(10,10,10) && canvas.transform.localScale==Vector3.one;
+                pass &= valid;
+                report.AppendLine("player="+player.OwnerClientId+" name="+text.text+" owner="+owner+" visible="+canvas.enabled+" distance="+distance.ToString("F3")+" textScale="+visual.localScale+" expected="+expected.ToString("F3")+" rootScale="+player.transform.localScale+" canvasScale="+canvas.transform.localScale+" color="+text.color+" pass="+valid);
+            }
+            report.AppendLine(pass?"PASS":"FAIL");
+            // Wait for actual camera/root updates and smoothing to settle; Editor
+            // ticks and offscreen Camera.Render calls are not gameplay-frame timers.
+            if(!pass || Vector3.Distance(camera.transform.position,local.transform.position)>2f)return;
+            File.WriteAllText(Path.Combine(folder,"phase-"+phase+"-client-"+id+".txt"),report.ToString());
+            RenderTexture.active=target;
+            var image=new Texture2D(960,540,TextureFormat.RGB24,false);
+            image.ReadPixels(new Rect(0,0,960,540),0,0);image.Apply();
+            File.WriteAllBytes(Path.Combine(folder,"phase-"+phase+"-client-"+id+".png"),image.EncodeToPNG());
+            UnityEngine.Object.DestroyImmediate(image);
+            recorded=true;
+        }
+        finally {camera.targetTexture=previousTarget;RenderTexture.active=previousActive;RenderTexture.ReleaseTemporary(target);}
+    }
+}
+#endif
