@@ -80,7 +80,7 @@ public static class HudAssetAudit
         check(canvas != null && canvas.childCount >= 4 && canvas.localScale != Vector3.zero,
             "PlayerCanvas is empty or has zero scale.");
         CheckFields(player.GetComponent<PlayerUI>(), check, "health", "shooter", "state", "combat", "abilitySlot",
-            "reload", "weaponReady", "healthFill", "healthText", "lowHealth", "confirmation", "hitMarker", "killMarker", "killText");
+            "reload", "healthFill", "healthText", "lowHealth", "confirmation", "hitMarker", "killMarker", "killText");
         CheckFields(player.GetComponent<PlayerCanvasController>(), check, "playerCanvas");
         foreach (var indicator in player.GetComponentsInChildren<DamageIndicatorView>(true))
             CheckFields(indicator, check, "bearing", "fade");
@@ -92,7 +92,7 @@ public static class HudAssetAudit
                 .All(i => array.GetArrayElementAtIndex(i).objectReferenceValue != null), "PlayerUI.damageIndicators must reference three authored indicators.");
         }
         foreach (var image in player.GetComponentsInChildren<UnityEngine.UI.Image>(true))
-            if (new[] { "ReloadTrack", "ReloadProgress", "WeaponReady", "HealthFill", "Arrow", "HitMarker", "KillMarker" }.Contains(image.name))
+            if (new[] { "ReloadTrack", "ReloadProgress", "HealthFill", "Arrow", "HitMarker", "KillMarker" }.Contains(image.name))
                 check(image.sprite != null, "PlayerCanvas/" + image.name + ": missing authored sprite.");
         CheckFields(match.GetComponent<GameplayHud>(), check, "gameplayRoot", "timer", "phaseLabel", "lifeStatus",
             "timerAccent", "baseNotice", "overtimeNotice", "teammatePanel", "teammateRows", "teammatePrefab", "feedRows", "feedPrefab");

@@ -83,12 +83,10 @@ public static class HudPlayModeCheck
                     Require(At<TMP_Text>("PlayerHealth/HealthValue").text == "100 / 100", "Initial health was not read");
                     Require(At<RectTransform>("Combat").gameObject.activeSelf && shooter.CanFire, "Ready combat HUD was not shown");
                     Require(!At<Image>("Combat/ReloadProgress").gameObject.activeSelf, "ReloadProgress is visible before reloading");
-                    Require(!At<Image>("Combat/WeaponReady").gameObject.activeSelf, "WeaponReady is visible on initial spawn");
                     typeof(TankShooter).GetMethod("TryFire", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(shooter, null);
                     Require(shooter.CooldownRemaining > 0 && !shooter.CanFire, "Actual shot did not start weapon cooldown");
                     Require(At<Image>("Combat/ReloadProgress").fillAmount < 1, "Reload ring did not react to the actual shot");
                     Require(At<Image>("Combat/ReloadProgress").gameObject.activeSelf, "ReloadProgress did not show on the shot event");
-                    Require(!At<Image>("Combat/WeaponReady").gameObject.activeSelf, "WeaponReady stayed visible during reload");
                     var ui = health.GetComponent<PlayerUI>();
                     ui.enabled = false;
                     ui.enabled = true;
@@ -99,11 +97,9 @@ public static class HudPlayModeCheck
                 case 3:
                     Require(shooter.CanFire && At<Image>("Combat/ReloadProgress").fillAmount > 0.99f, "Reload ring did not finish with the weapon");
                     Require(!At<Image>("Combat/ReloadProgress").gameObject.activeSelf, "ReloadProgress stayed visible after cooldown completion");
-                    Require(At<Image>("Combat/WeaponReady").gameObject.activeSelf, "Successful cooldown did not show WeaponReady");
                     health.GetComponent<PlayerUI>().enabled = false;
                     health.GetComponent<PlayerUI>().enabled = true;
                     Require(!At<Image>("Combat/ReloadProgress").gameObject.activeSelf, "Re-enable showed a finished reload");
-                    Require(!At<Image>("Combat/WeaponReady").gameObject.activeSelf, "Re-enable replayed the completion animation");
                     health.currentHealth.Value = 75;
                     Next();
                     break;
