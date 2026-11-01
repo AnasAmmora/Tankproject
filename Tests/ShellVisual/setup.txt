@@ -1,0 +1,1 @@
+Saved continuous shell mesh: 696 vertices / 336 triangles / 2 submeshes and matte materials. Local bounds=Center: (0.00, 0.00, 0.00), Extents: (0.21, 0.21, 0.50); gameplay bounds size=(0.04, 0.04, 0.10); +Z tip. Rigidbody/Collider/Bullet JSON and root scale unchanged. Visual has only Transform/MeshFilter/MeshRenderer.

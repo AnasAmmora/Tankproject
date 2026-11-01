@@ -14,5 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DamageFalloff
   baseDamage: 25
   fullDamageDistance: 5
-  maximumFalloffDistance: 100
-  minimumDamageMultiplier: 0.05
+  maximumFalloffDistance: 110
+  minimumDamageMultiplier: 0.03

@@ -1,0 +1,2 @@
+Actual TankShooter.TryFire Host shot: bullet=-93166 rootScale=(0.10, 0.10, 0.10) visualWorldSize=(0.04, 0.04, 0.10) visualForwardDot=1 velocity=(0.00, 1.54, 50.00) mesh=Assets/ProjectsFiles/Art/Projectiles/CartoonShell.asset
+Physics travelled=2.000622 units in 0.04 simulated seconds. Second actual TryFire reused the same instance=True; visual scale=(1.00, 1.00, 1.00); forward dot=1; visual components=Transform,MeshFilter,MeshRenderer
