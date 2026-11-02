@@ -39,6 +39,19 @@ public class PlayerHealth : NetworkBehaviour
     {
         if (!IsServer || isDead.Value || currentHealth.Value <= 0 || damage <= 0 || MatchManager.Instance == null ||
             !MatchManager.Instance.CanDamage(attackerTeam, playerState.teamIndex.Value)) return false;
+        return ApplyDamage(damage, attackerObject, sourcePosition, impactPosition);
+    }
+
+    // Environmental damage has no attacker and must still obey the active match/life rules.
+    public bool TakeEnvironmentalDamage(int damage)
+    {
+        if (!IsSpawned || !IsServer || isDead.Value || currentHealth.Value <= 0 || damage <= 0 ||
+            MatchManager.Instance == null || !MatchManager.Instance.CanTakeEnvironmentalDamage(this)) return false;
+        return ApplyDamage(damage, ulong.MaxValue, null, null);
+    }
+
+    private bool ApplyDamage(int damage, ulong attackerObject, Vector3? sourcePosition, Vector3? impactPosition)
+    {
         int appliedDamage = Mathf.Min(currentHealth.Value, damage);
         currentHealth.Value -= appliedDamage;
         if (currentHealth.Value == 0)

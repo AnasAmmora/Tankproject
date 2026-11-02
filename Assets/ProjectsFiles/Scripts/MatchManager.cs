@@ -214,6 +214,10 @@ public class MatchManager : NetworkBehaviour
 
     public bool CanDamage(int attackerTeam, int victimTeam) => IsServer && rules.Running && MatchRules.IsEnemy(attackerTeam, victimTeam);
 
+    public bool CanTakeEnvironmentalDamage(PlayerHealth health) => IsServer && rules.Running && health != null &&
+        rules.Players.TryGetValue(health.OwnerClientId, out var player) && player.objectId == health.NetworkObjectId &&
+        player.alive && !player.disconnected;
+
     // Claim before applying damage or an impulse, not just before displaying FX.
     public bool TryResolveProjectile(ulong shooter, uint shot) => IsServer && IsSpawned && resolvedProjectiles.Add((shooter, shot));
 
