@@ -118,8 +118,12 @@ public class PlayerIdentityManager : MonoBehaviour
             if (!AuthenticationService.Instance.IsSignedIn)
             {
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
-                await AuthenticationService.Instance.UpdatePlayerNameAsync(LocalPlayerName);
             }
+
+            // Authentication can succeed while the name update fails. Retry the
+            // name independently, including when this identity is already signed in.
+            if (this == null) return false;
+            await AuthenticationService.Instance.UpdatePlayerNameAsync(rawName);
 
             MatchConnectionCoordinator.Trace("Authentication", "signed in; identityFingerprint=" +
                 MatchParticipantRoster.TokenHash(AuthenticationService.Instance.PlayerId).Substring(0, 12));

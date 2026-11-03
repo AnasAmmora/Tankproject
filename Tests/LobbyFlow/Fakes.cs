@@ -8,6 +8,15 @@ using Unity.Services.Lobbies.Models;
 
 namespace UnityEngine
 {
+    public static class Random { public static int Range(int min, int max) => min; }
+    public static class PlayerPrefs
+    {
+        static readonly Dictionary<string, string> Values = new();
+        public static bool HasKey(string key) => Values.ContainsKey(key);
+        public static string GetString(string key) => Values[key];
+        public static void SetString(string key, string value) => Values[key] = value;
+        public static void Save() { }
+    }
     public class SerializeField : Attribute { }
     public class HeaderAttribute(string text) : Attribute { }
     public class DefaultExecutionOrder(int order) : Attribute { }
@@ -184,11 +193,17 @@ namespace TMPro
     }
     public class TextMeshProUGUI : TMP_Text { }
     public class TMP_Dropdown : UnityEngine.Component { public int value; public bool interactable; }
+    public class TMP_InputField : UnityEngine.Component { public string text; }
 }
 namespace Unity.Services.Core
 {
     public enum ServicesInitializationState { Uninitialized, Initialized }
-    public static class UnityServices { public static ServicesInitializationState State = ServicesInitializationState.Initialized; }
+    public class InitializationOptions { public void SetProfile(string profile) { } }
+    public static class UnityServices
+    {
+        public static ServicesInitializationState State = ServicesInitializationState.Initialized;
+        public static Task InitializeAsync(InitializationOptions options) { State = ServicesInitializationState.Initialized; return Task.CompletedTask; }
+    }
 }
 namespace Unity.Services.Authentication
 {
@@ -196,6 +211,10 @@ namespace Unity.Services.Authentication
     {
         public static AuthenticationService Instance = new();
         public string PlayerId = "host"; public bool IsSignedIn = true;
+        public Func<Task> SignIn;
+        public Func<string, Task> UpdateName = _ => Task.CompletedTask;
+        public Task SignInAnonymouslyAsync() { if (SignIn != null) return SignIn(); IsSignedIn = true; return Task.CompletedTask; }
+        public Task UpdatePlayerNameAsync(string name) => UpdateName(name);
     }
 }
 namespace Unity.Services.Lobbies.Models
@@ -220,7 +239,7 @@ namespace Unity.Services.Lobbies.Models
 namespace Unity.Services.Lobbies
 {
     public enum LobbyExceptionReason { UnknownErrorCode = 0, LobbyNotFound = 16001, PlayerNotFound = 16002,
-        RequestTimeOut = 16408, RateLimited = 16429, InternalServerError = 16500, NetworkError = 16998, Unknown = 16999 }
+        Forbidden = 16403, RequestTimeOut = 16408, RateLimited = 16429, InternalServerError = 16500, NetworkError = 16998, Unknown = 16999 }
     public class LobbyServiceException(LobbyExceptionReason reason, string message) : Exception(message)
     { public LobbyExceptionReason Reason => reason; public int ErrorCode => (int)reason; }
     public class CreateLobbyOptions { public bool IsPrivate; public Player Player; public Dictionary<string, DataObject> Data; }
@@ -241,6 +260,8 @@ namespace Unity.Services.Lobbies
         public Func<Task> Heartbeat = () => Task.CompletedTask;
         public Func<Task> Delete = () => Task.CompletedTask;
         public Func<Task> Remove = () => Task.CompletedTask;
+        public readonly List<(string lobby, string player)> RemovalCalls = new();
+        public readonly List<string> DeleteCalls = new();
         public Task<List<string>> GetJoinedLobbiesAsync() => Joined();
         public Task<Lobby> GetLobbyAsync(string id) => Get(id);
         public Task<Lobby> CreateLobbyAsync(string name, int max, CreateLobbyOptions options) => Create(options);
@@ -249,8 +270,8 @@ namespace Unity.Services.Lobbies
         public Task<Lobby> UpdatePlayerAsync(string id, string playerId, UpdatePlayerOptions options) => PlayerUpdate(options);
         public Task<Lobby> UpdateLobbyAsync(string id, UpdateLobbyOptions options) => Update(options);
         public Task SendHeartbeatPingAsync(string id) => Heartbeat();
-        public Task DeleteLobbyAsync(string id) => Delete();
-        public Task RemovePlayerAsync(string id, string player) => Remove();
+        public Task DeleteLobbyAsync(string id) { DeleteCalls.Add(id); return Delete(); }
+        public Task RemovePlayerAsync(string id, string player) { RemovalCalls.Add((id, player)); return Remove(); }
     }
 }
 namespace Unity.Services.Relay
@@ -297,7 +318,8 @@ namespace Unity.Netcode
     {
         public event Action<SceneEvent> OnSceneEvent;
         public SceneEventProgressStatus Result = SceneEventProgressStatus.Started;
-        public SceneEventProgressStatus LoadScene(string scene, UnityEngine.SceneManagement.LoadSceneMode mode) => Result;
+        public int LoadCalls;
+        public SceneEventProgressStatus LoadScene(string scene, UnityEngine.SceneManagement.LoadSceneMode mode) { LoadCalls++; return Result; }
     }
     public enum SendTo { Everyone,Server,Owner,SpecifiedInParams }
     public enum RpcTargetUse { Temp }
@@ -350,7 +372,9 @@ namespace Unity.Netcode.Transports.UTP
         public void SetConnectionData(string ip, ushort port) { }
     }
 }
+#if !LOBBY_FLOW_IDENTITY
 public class PlayerIdentityManager { public static string LocalPlayerName = "Tester"; public static bool OpenBrowserOnNextMenu; }
+#endif
 public class RoomItemUI : UnityEngine.Component { public void Initialize(Lobby lobby, LobbyManager manager) { } }
 #if !UI_FLOW_TESTS
 public class LoadingScreenController

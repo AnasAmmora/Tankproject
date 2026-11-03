@@ -59,7 +59,7 @@ static partial class Program
         ui.IsSpawned = true; ui.IsOwner = owner; ui.OnNetworkSpawn();
         return (ui, canvas, root);
     }
-    static void Main()
+    static void Main(string[] args)
     {
         UnityEngine.Object.PrefabFactory = (template, parent) => { var row = Row(); row.transform.parent = parent; return row; };
         var screen = Loading(); Call(screen, "Awake");
@@ -132,7 +132,7 @@ static partial class Program
         Call(nextHud, "OnDestroy"); Call(screen, "OnDestroy");
         var missing = Loading(); Set(missing, "status", null); Call(missing, "Awake");
         Assert(!missing.IsConfigured && Debug.Messages.Any(m => m.Contains("missing Inspector reference 'status'")), "Missing reference is reported without creating UI");
-        VerifyGameplay();
+        if (Array.IndexOf(args, "--menu-only") < 0) VerifyGameplay();
         Console.WriteLine($"PASS: {checks} UI lifecycle assertions (simulated engine boundary).");
     }
 }

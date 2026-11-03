@@ -41,6 +41,20 @@ public class LobbyManager : MonoBehaviour
     private bool pollPending;
     private bool heartbeatPending;
     private bool actionPending;
+    private bool starting;
+    private bool leaveRequested;
+    private string acknowledgedStart;
+    private TaskCompletionSource<Lobby> startAgreement;
+    private double startDeadline;
+    private string[] startRoster;
+    private string startHost;
+    private bool recoveringStart;
+    private double roomWaitDeadline;
+    private string waitingTransition;
+    private bool departurePending;
+    private Task departureRequest;
+    private bool RoomLocked => starting || leaveRequested || departureRequest != null || hasJoinedRelay || currentLobby?.IsLocked == true ||
+        MatchConnectionCoordinator.Instance?.TransitionActive == true;
     private bool refreshPending;
     private bool destroyed;
     private int revision;
@@ -87,15 +101,28 @@ public class LobbyManager : MonoBehaviour
 
     private void Update()
     {
+        if (startAgreement != null && Time.realtimeSinceStartupAsDouble >= startDeadline)
+            startAgreement.TrySetException(new TimeoutException("Participants did not confirm the starting roster."));
         HandleLobbyHeartbeat();
         HandleLobbyPolling();
+        if (!hasJoinedRelay && startAgreement == null && roomWaitDeadline > 0 &&
+            Time.realtimeSinceStartupAsDouble >= roomWaitDeadline && (leaveRequested || starting))
+            RecoverStalledRoom();
     }
 
     private bool Current(int version) => this != null && !destroyed && revision == version && !hasJoinedRelay;
+    private bool CurrentRoom(int version, string id) => Current(version) && currentLobby?.Id == id;
+    private double RoomWaitLimit => MatchConnectionCoordinator.Instance?.StartPreparationTimeout ?? 90f;
 
-    private bool BeginAction(string operation)
+    public void ConnectionRecoveryFinished(string message)
     {
-        if (destroyed || actionPending || hasJoinedRelay) return false;
+        ShowNotice(message);
+        UpdateControls();
+    }
+
+    private bool BeginAction(string operation, bool connecting = false)
+    {
+        if (destroyed || actionPending || departurePending || hasJoinedRelay || (!connecting && RoomLocked)) return false;
         if (!SignedIn) { ShowNotice("Sign in to Unity services before trying again."); return false; }
         actionPending = true;
         revision++; // Invalidate a poll/query that began before this mutation.
@@ -164,7 +191,9 @@ public class LobbyManager : MonoBehaviour
 
     private async void HandleLobbyPolling()
     {
-        if (!SignedIn || currentLobby == null || hasJoinedRelay || actionPending || pollPending) return;
+        if (!SignedIn || currentLobby == null || hasJoinedRelay ||
+            departurePending || (departureRequest != null && !departureRequest.IsCompleted) ||
+            (actionPending && !starting && !leaveRequested) || pollPending) return;
         pollTimer -= Time.unscaledDeltaTime;
         if (pollTimer > 0f) return;
         pollTimer = 1.5f;
@@ -177,6 +206,8 @@ public class LobbyManager : MonoBehaviour
             if (!Current(version) || currentLobby?.Id != id) return;
             if (updated.LastUpdated < currentLobby.LastUpdated) return;
             currentLobby = updated;
+            await ReconcileRoomActions();
+            if (!Current(version) || currentLobby == null) return;
             if (pollWarningShown) ShowNotice("");
             pollWarningShown = false;
             UpdateWaitingRoomUI();
@@ -185,7 +216,8 @@ public class LobbyManager : MonoBehaviour
         catch (Exception e)
         {
             if (!Current(version) || currentLobby?.Id != id) return;
-            if (e is LobbyServiceException service && service.Reason == LobbyExceptionReason.LobbyNotFound)
+            if (e is LobbyServiceException service && (service.Reason == LobbyExceptionReason.LobbyNotFound ||
+                service.Reason == LobbyExceptionReason.PlayerNotFound))
                 ResetLobbyUI("The lobby no longer exists.");
             else if (!pollWarningShown)
             {
@@ -206,6 +238,8 @@ public class LobbyManager : MonoBehaviour
             {
                 { "PlayerName", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, PlayerIdentityManager.LocalPlayerName) },
                 { "IsReady", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "False") },
+                { "LeaveRequested", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "False") },
+                { "StartAck", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "") },
                 { "ConnectionTokenHash", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, MatchParticipantRoster.TokenHash(localJoinToken)) }
             }
         };
@@ -215,6 +249,12 @@ public class LobbyManager : MonoBehaviour
     // that the service failed to create the room. A failed check stops creation.
     private async Task<bool> RecoverMembershipAsync(int version)
     {
+        var coordinator = MatchConnectionCoordinator.Instance;
+        if (coordinator != null && coordinator.HasPendingLobbyCleanup)
+        {
+            await coordinator.CompletePendingCleanupAsync();
+            if (!Current(version)) return true;
+        }
         List<string> joined = await LobbyService.Instance.GetJoinedLobbiesAsync();
         if (!Current(version)) return true;
         foreach (string id in joined)
@@ -228,15 +268,23 @@ public class LobbyManager : MonoBehaviour
             if (member == null) continue;
             currentLobby = existing;
             ShowWaitingRoom();
-            if (existing.IsLocked)
+            if (existing.IsLocked || Leaving(member))
             {
-                ShowNotice("A previous room is still locked. Leave it before creating or joining another room.");
+                // The old process's secret ticket is unavailable. Never acknowledge
+                // its transition or revive a membership already being removed.
+                leaveRequested = true;
+                roomWaitDeadline = Time.realtimeSinceStartupAsDouble + RoomWaitLimit;
+                await RecoverStalledRoomAsync(version, existing);
                 return true;
             }
+            string previousToken = localJoinToken;
             Player registration = GetPlayer();
+            string registrationToken = localJoinToken;
+            localJoinToken = previousToken;
             Lobby updated = await LobbyService.Instance.UpdatePlayerAsync(id, member.Id,
                 new UpdatePlayerOptions { Data = registration.Data });
-            if (!Current(version)) return true;
+            if (!CurrentRoom(version, id)) return true;
+            localJoinToken = registrationToken;
             currentLobby = updated;
             UpdateWaitingRoomUI();
             ShowNotice("Recovered your existing room. Mark Ready when you are ready.");
@@ -260,7 +308,8 @@ public class LobbyManager : MonoBehaviour
                 Data = new Dictionary<string, DataObject>
                 {
                     { "HostName", new DataObject(DataObject.VisibilityOptions.Public, PlayerIdentityManager.LocalPlayerName) },
-                    { "RelayCode", new DataObject(DataObject.VisibilityOptions.Member, "0") }
+                    { "RelayCode", new DataObject(DataObject.VisibilityOptions.Member, "0") },
+                    { "RoomState", new DataObject(DataObject.VisibilityOptions.Member, "Waiting") }
                 }
             };
             Lobby created = await LobbyService.Instance.CreateLobbyAsync(PlayerIdentityManager.LocalPlayerName + "'s Room",
@@ -354,7 +403,7 @@ public class LobbyManager : MonoBehaviour
     private void UpdateControls()
     {
         if (this == null || destroyed) return;
-        bool available = !actionPending && !hasJoinedRelay;
+        bool available = !actionPending && !departurePending && !RoomLocked;
         if (createRoomButton != null) createRoomButton.interactable = available && currentLobby == null;
         if (refreshButton != null) refreshButton.interactable = available && !refreshPending && currentLobby == null;
         if (maxPlayersDropdown != null) maxPlayersDropdown.interactable = available && currentLobby == null;
@@ -364,7 +413,8 @@ public class LobbyManager : MonoBehaviour
         {
             bool host = SignedIn && currentLobby?.HostId == AuthenticationService.Instance.PlayerId;
             startGameButton.gameObject.SetActive(host);
-            startGameButton.interactable = available && host && !currentLobby.IsLocked && HasLocalTicket && AllReady;
+            startGameButton.interactable = available && host && !currentLobby.IsLocked && HasLocalTicket && AllReady &&
+                MatchConnectionCoordinator.Instance?.CanBegin == true;
         }
         if (roomListContainer != null)
             foreach (Button button in roomListContainer.GetComponentsInChildren<Button>(true))
@@ -403,13 +453,70 @@ public class LobbyManager : MonoBehaviour
         {
             if (leaving.HostId == AuthenticationService.Instance.PlayerId)
                 await LobbyService.Instance.DeleteLobbyAsync(leaving.Id);
-            else await LobbyService.Instance.RemovePlayerAsync(leaving.Id, AuthenticationService.Instance.PlayerId);
+            else
+            {
+                // Only the host removes members for manual Leave. An intent already
+                // in flight must settle before this client can acknowledge Starting.
+                leaveRequested = true;
+                roomWaitDeadline = Time.realtimeSinceStartupAsDouble + RoomWaitLimit;
+                await LobbyService.Instance.UpdatePlayerAsync(leaving.Id, AuthenticationService.Instance.PlayerId,
+                    new UpdatePlayerOptions { Data = new Dictionary<string, PlayerDataObject>
+                    { { "LeaveRequested", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "True") } } });
+                if (CurrentRoom(version, leaving.Id)) ShowNotice("Waiting for the host to accept Leave...");
+                return; // Polling observes the authoritative removal.
+            }
             if (Current(version)) ResetLobbyUI("Left room.");
         }
         catch (LobbyServiceException e) when (e.Reason == LobbyExceptionReason.LobbyNotFound || e.Reason == LobbyExceptionReason.PlayerNotFound)
         { if (Current(version)) ResetLobbyUI("Room membership has ended."); }
         catch (Exception e) { if (Current(version)) ReportFailure("Leave room", e); }
-        finally { EndAction(version); }
+        finally { if (!leaveRequested) EndAction(version); }
+    }
+
+    private async void RecoverStalledRoom()
+    {
+        if (currentLobby == null || departurePending) return;
+        await RecoverStalledRoomAsync(revision, currentLobby);
+    }
+
+    private async Task RecoverStalledRoomAsync(int version, Lobby room)
+    {
+        if (!CurrentRoom(version, room.Id) || departurePending) return;
+        departurePending = true;
+        leaveRequested = true; // Withdraw participation; never send a later StartAck.
+        actionPending = true;
+        UpdateControls();
+        ShowNotice("Recovering room membership. Please wait...");
+        try
+        {
+            // This is failed-session recovery, not a manual Leave during Start.
+            // A timed-out SDK request remains owned until it actually settles.
+            if (departureRequest == null)
+                departureRequest = room.HostId == AuthenticationService.Instance.PlayerId
+                    ? LobbyService.Instance.DeleteLobbyAsync(room.Id)
+                    : LobbyService.Instance.RemovePlayerAsync(room.Id, AuthenticationService.Instance.PlayerId);
+            Task request = departureRequest;
+            if (await Task.WhenAny(request, Task.Delay(10000)) != request)
+                throw new TimeoutException("Membership recovery is still pending. It will be checked again.");
+            await request;
+            if (CurrentRoom(version, room.Id)) ResetLobbyUI("Previous room membership ended. You can create or join a room.");
+        }
+        catch (LobbyServiceException e) when (e.Reason == LobbyExceptionReason.LobbyNotFound ||
+            e.Reason == LobbyExceptionReason.PlayerNotFound)
+        { if (CurrentRoom(version, room.Id)) ResetLobbyUI("Room membership has ended."); }
+        catch (Exception e)
+        {
+            if (CurrentRoom(version, room.Id))
+            {
+                if (departureRequest?.IsCompleted == true) departureRequest = null;
+                roomWaitDeadline = Time.realtimeSinceStartupAsDouble + 5;
+                ReportFailure("Recover room membership (will retry)", e);
+            }
+        }
+        finally
+        {
+            if (this != null && !destroyed) { departurePending = false; UpdateControls(); }
+        }
     }
 
     private void ResetLobbyUI(string reason)
@@ -417,6 +524,17 @@ public class LobbyManager : MonoBehaviour
         MatchConnectionCoordinator.Trace("ResetLobbyUI", "reason=" + reason, Role);
         revision++;
         actionPending = false;
+        starting = leaveRequested = false;
+        recoveringStart = false;
+        roomWaitDeadline = 0;
+        waitingTransition = null;
+        departureRequest = null;
+        var agreement = startAgreement;
+        startAgreement = null;
+        startRoster = null;
+        startHost = null;
+        agreement?.TrySetException(new InvalidOperationException("Room membership ended during Start."));
+        acknowledgedStart = null;
         currentLobby = null;
         localJoinToken = null;
         isReady = hasJoinedRelay = false;
@@ -429,26 +547,164 @@ public class LobbyManager : MonoBehaviour
         RefreshLobbyList();
     }
 
+    private static string RoomData(Lobby room, string key) => room?.Data != null &&
+        room.Data.TryGetValue(key, out var value) ? value.Value : "";
+
+    private static bool Leaving(Player player) => player.Data != null &&
+        player.Data.TryGetValue("LeaveRequested", out var value) && value.Value == "True";
+
+    private async Task ReconcileRoomActions()
+    {
+        int version = revision;
+        Lobby room = currentLobby;
+        if (room == null || departurePending) return;
+        string id = room.Id;
+        string local = AuthenticationService.Instance.PlayerId;
+        if (currentLobby.Players == null || !currentLobby.Players.Any(p => p.Id == local))
+        { ResetLobbyUI("Room membership has ended."); return; }
+        bool host = currentLobby.HostId == local;
+        if (host && recoveringStart) { await RestoreWaitingRoom(); return; }
+        bool announced = RoomData(currentLobby, "RoomState") == "Starting";
+        if (announced && host && RoomData(currentLobby, "StartingHost") != local)
+        { await RestoreWaitingRoom(); return; } // Host migration cancels the old host's proposal.
+        bool wasStarting = starting;
+        starting = announced || (host && startAgreement != null);
+        string transition = RoomData(room, "TransitionId");
+        if (announced && waitingTransition != transition)
+        {
+            waitingTransition = transition;
+            if (!leaveRequested) roomWaitDeadline = Time.realtimeSinceStartupAsDouble + RoomWaitLimit;
+        }
+        if (!announced && !leaveRequested) { roomWaitDeadline = 0; waitingTransition = null; }
+        UpdateControls();
+        if (startAgreement != null)
+        {
+            bool unchanged = currentLobby.HostId == startHost && currentLobby.Players.Select(p => p.Id)
+                .OrderBy(id => id).SequenceEqual(startRoster);
+            if (!unchanged || !AllReady || currentLobby.Players.Any(Leaving))
+            { startAgreement.TrySetException(new InvalidOperationException("The roster changed or a player requested Leave. Start canceled.")); return; }
+        }
+        if (!announced)
+        {
+            acknowledgedStart = null;
+            if (wasStarting && !starting) ShowNotice("Start canceled. The waiting room is available again.");
+            if (leaveRequested && !Leaving(room.Players.First(p => p.Id == local)))
+                await LobbyService.Instance.UpdatePlayerAsync(id, local, new UpdatePlayerOptions
+                { Data = new Dictionary<string, PlayerDataObject> {
+                    { "LeaveRequested", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "True") } } });
+            if (!CurrentRoom(version, id)) return;
+            if (host)
+                foreach (var player in room.Players.Where(Leaving).ToArray())
+                {
+                    if (!CurrentRoom(version, id) || starting || RoomData(currentLobby, "RoomState") == "Starting") return;
+                    try { await LobbyService.Instance.RemovePlayerAsync(id, player.Id); }
+                    catch (LobbyServiceException e) when (e.Reason == LobbyExceptionReason.PlayerNotFound)
+                    { /* A concurrent real disconnect already removed this member. */ }
+                    if (!CurrentRoom(version, id)) return;
+                }
+            return;
+        }
+        ShowNotice("Starting match. Please wait...");
+        string ticket = RoomData(currentLobby, "TransitionId");
+        if (leaveRequested)
+        {
+            // Retry an uncertain intent write, never acknowledge a start over it.
+            if (!Leaving(room.Players.First(p => p.Id == local)))
+                await LobbyService.Instance.UpdatePlayerAsync(id, local, new UpdatePlayerOptions
+                { Data = new Dictionary<string, PlayerDataObject> {
+                    { "LeaveRequested", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, "True") } } });
+            return;
+        }
+        if (!host && !actionPending && HasLocalTicket && acknowledgedStart != ticket)
+        {
+            // Synchronously starting=true blocks a subsequent manual Leave before
+            // this acknowledgement's asynchronous write can reach the service.
+            await LobbyService.Instance.UpdatePlayerAsync(id, local, new UpdatePlayerOptions
+            { Data = new Dictionary<string, PlayerDataObject> {
+                { "StartAck", new PlayerDataObject(PlayerDataObject.VisibilityOptions.Member, ticket) } } });
+            if (!CurrentRoom(version, id)) return;
+            acknowledgedStart = ticket;
+        }
+        if (host && startAgreement != null && currentLobby.Players.All(p => p.Id == local ||
+            (p.Data != null && p.Data.TryGetValue("StartAck", out var ack) && ack.Value == ticket)))
+            startAgreement.TrySetResult(currentLobby);
+    }
+
+    private async Task RestoreWaitingRoom()
+    {
+        int version = revision;
+        Lobby room = currentLobby;
+        recoveringStart = true;
+        if (room == null) { recoveringStart = false; return; }
+        if (currentLobby.HostId != AuthenticationService.Instance.PlayerId)
+        { recoveringStart = false; return; } // Only the current authority may unlock the room.
+        try
+        {
+            Lobby restored = await LobbyService.Instance.UpdateLobbyAsync(room.Id, new UpdateLobbyOptions
+            { IsLocked = false, Data = new Dictionary<string, DataObject> {
+                { "RoomState", new DataObject(DataObject.VisibilityOptions.Member, "Waiting") },
+                { "TransitionId", new DataObject(DataObject.VisibilityOptions.Member, "") },
+                { "RelayCode", new DataObject(DataObject.VisibilityOptions.Member, "0") } } });
+            if (!CurrentRoom(version, room.Id)) return;
+            currentLobby = restored;
+            starting = recoveringStart = false;
+            if (!leaveRequested) { roomWaitDeadline = 0; waitingTransition = null; }
+            pollTimer = 0f;
+        }
+        catch (Exception e) { if (CurrentRoom(version, room.Id)) ReportFailure("Restore waiting room (will retry)", e); }
+        if (CurrentRoom(version, room.Id)) UpdateControls();
+    }
+
     private async void StartGame()
     {
         if (currentLobby == null || currentLobby.HostId != AuthenticationService.Instance.PlayerId || !AllReady || !HasLocalTicket ||
-            currentLobby.IsLocked || !BeginAction("Start match")) return;
+            currentLobby.IsLocked || MatchConnectionCoordinator.Instance?.CanBegin != true || !BeginAction("Start match")) return;
         int version = revision;
+        string roomId = currentLobby.Id;
+        MatchConnectionCoordinator coordinator = MatchConnectionCoordinator.Instance;
+        starting = true;
+        UpdateControls();
         try
         {
-            MatchConnectionCoordinator coordinator = MatchConnectionCoordinator.Instance;
             if (coordinator == null || !coordinator.CanBegin)
                 throw new InvalidOperationException("The connection manager is missing or still closing a previous connection.");
-            hasJoinedRelay = true; // Transfer cleanup ownership before any await or scene change.
+            startRoster = currentLobby.Players.Select(p => p.Id).OrderBy(id => id).ToArray();
+            startHost = currentLobby.HostId;
+            startAgreement = new TaskCompletionSource<Lobby>();
+            startDeadline = Time.realtimeSinceStartupAsDouble + coordinator.StartPreparationTimeout;
+            string ticket = Guid.NewGuid().ToString("N");
+            Lobby announced = await LobbyService.Instance.UpdateLobbyAsync(roomId, new UpdateLobbyOptions
+            {
+                IsLocked = true, Data = new Dictionary<string, DataObject>
+                {
+                    { "RoomState", new DataObject(DataObject.VisibilityOptions.Member, "Starting") },
+                    { "StartingHost", new DataObject(DataObject.VisibilityOptions.Member, startHost) },
+                    { "TransitionId", new DataObject(DataObject.VisibilityOptions.Member, ticket) },
+                    { "RelayCode", new DataObject(DataObject.VisibilityOptions.Member, "0") }
+                }
+            });
+            if (!CurrentRoom(version, roomId)) return;
+            currentLobby = announced;
+            pollTimer = 0f;
+            ShowNotice("Starting match. Confirming participants...");
+            Lobby agreed = await startAgreement.Task;
+            if (!CurrentRoom(version, roomId)) return;
+            // Transfer ownership only after every remaining client has settled prior
+            // actions and acknowledged this exact roster/transition.
+            hasJoinedRelay = true;
             UpdateControls();
-            await coordinator.StartHostMatchAsync(currentLobby, localJoinToken, gameSceneName, menuSceneName);
+            await coordinator.StartHostMatchAsync(agreed, localJoinToken, gameSceneName, menuSceneName);
         }
         catch (Exception e)
         {
-            if (this != null && !destroyed && revision == version)
-            { hasJoinedRelay = false; ReportFailure("Start match", e); }
+            if (this != null && !destroyed && revision == version && coordinator?.TransitionActive != true)
+            {
+                hasJoinedRelay = false;
+                await RestoreWaitingRoom();
+                ReportFailure("Start match", e);
+            }
         }
-        finally { EndAction(version); }
+        finally { if (this != null && !destroyed && revision == version) { startAgreement = null; EndAction(version); } }
     }
 
     private async void CheckIfGameStarted()
@@ -456,7 +712,7 @@ public class LobbyManager : MonoBehaviour
         if (hasJoinedRelay || actionPending || currentLobby?.Data == null ||
             !currentLobby.Data.TryGetValue("RelayCode", out DataObject code) ||
             string.IsNullOrWhiteSpace(code.Value) || code.Value == "0") return;
-        if (!HasLocalTicket || !BeginAction("Connect to match")) return;
+        if (!HasLocalTicket || leaveRequested || !BeginAction("Connect to match", true)) return;
         int version = revision;
         try
         {
@@ -479,6 +735,7 @@ public class LobbyManager : MonoBehaviour
     {
         destroyed = true;
         revision++;
+        startAgreement?.TrySetCanceled();
         if (createRoomButton != null) createRoomButton.onClick.RemoveListener(CreateRoom);
         if (refreshButton != null) refreshButton.onClick.RemoveListener(RefreshLobbyList);
         if (readyButton != null) readyButton.onClick.RemoveListener(ToggleReady);

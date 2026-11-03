@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Unity.Netcode;
@@ -50,7 +51,11 @@ public class MatchConnectionCoordinator : MonoBehaviour
     private string stage = "Idle";
     private bool quitting;
     private bool heartbeatWarningShown;
-    public bool CanBegin => !TransitionActive && !returning && !network.IsListening && !network.ShutdownInProgress;
+    private Task cleanupRequest;
+    public bool HasPendingLobbyCleanup => lobby != null && !TransitionActive;
+    public bool CanBegin => !TransitionActive && !returning && lobby == null && cleanupRequest == null &&
+        !network.IsListening && !network.ShutdownInProgress;
+    public float StartPreparationTimeout => transitionTimeout;
 
     public static void Trace(string operation, string detail, string role = null, bool warning = false)
     {
@@ -125,11 +130,14 @@ public class MatchConnectionCoordinator : MonoBehaviour
     {
         if (!CanBegin) throw new InvalidOperationException("The previous connection is still closing. Please try again shortly.");
         int operation = -1;
+        bool committed = false;
         try
         {
-            string id = Guid.NewGuid().ToString("N");
+            string id = source.Data != null && source.Data.TryGetValue("TransitionId", out var ticket) ? ticket.Value : "";
+            if (string.IsNullOrEmpty(id) || !DataEquals(source, "RoomState", "Starting"))
+                throw new InvalidOperationException("The room has not agreed to start.");
+            operation = generation + 1;
             Begin(source, token, id, destination, menu);
-            operation = generation;
             // Lock first. The response is the final membership snapshot, including any
             // participant who joined just before the lock took effect.
             SetStage("LockLobby");
@@ -144,6 +152,7 @@ public class MatchConnectionCoordinator : MonoBehaviour
             }, value => value.IsLocked && DataEquals(value, "TransitionId", id), operation);
             EnsureCurrent(operation);
             lobby = lockedLobby;
+            ValidateStartingRoster(lobby, source);
             Dictionary<string, string> hashes = new Dictionary<string, string>();
             foreach (Player member in lobby.Players)
             {
@@ -170,12 +179,17 @@ public class MatchConnectionCoordinator : MonoBehaviour
             EnsureCurrent(operation);
             Trace("StartHost", "succeeded");
             AttachSceneEvents();
+            Lobby finalRoster = await LobbyService.Instance.GetLobbyAsync(lobby.Id);
+            EnsureCurrent(operation);
+            ValidateStartingRoster(finalRoster, source);
+            lobby = finalRoster;
             screen.Show("Loading");
             SetStage("LoadGameScene");
             SceneEventProgressStatus result = network.SceneManager.LoadScene(destination, LoadSceneMode.Single);
             Trace("LoadGameScene", "result=" + result);
             if (result != SceneEventProgressStatus.Started)
                 throw new InvalidOperationException("Network scene load was rejected: " + result);
+            committed = true;
 
             // Clients learn the code only after transport, host startup and the scene
             // load request have succeeded. This task is owned by this persistent object.
@@ -193,7 +207,42 @@ public class MatchConnectionCoordinator : MonoBehaviour
             lobby = publishedLobby;
             if (!MatchStarted) SetStage("WaitingForPlayers");
         }
-        catch (Exception e) { if (operation < 0 || operation == generation) Fail("Start failed at " + stage + ": " + ErrorDescription(e)); }
+        catch (Exception e)
+        {
+            // An old continuation must never tear down recovery or a newer session.
+            if (operation != generation || returning || quitting) throw;
+            if (committed) { if (operation == generation) Fail("Start failed at " + stage + ": " + ErrorDescription(e)); }
+            else
+            {
+                // Before scene-load acceptance the UI still owns a recoverable room.
+                DetachNetworkEvents();
+                if (network.IsListening) network.Shutdown();
+                network.NetworkConfig.ConnectionData = Array.Empty<byte>();
+                generation++;
+                TransitionActive = MatchStarted = false;
+                Roster = null;
+                lobby = null;
+                screen?.Hide();
+                throw;
+            }
+        }
+    }
+
+    private static void ValidateStartingRoster(Lobby value, Lobby expected)
+    {
+        if (!value.IsLocked || value.HostId != expected.HostId || !DataEquals(value, "RoomState", "Starting") ||
+            !DataEquals(value, "TransitionId", expected.Data["TransitionId"].Value) || value.Players == null ||
+            !value.Players.Select(p => p.Id).OrderBy(id => id).SequenceEqual(expected.Players.Select(p => p.Id).OrderBy(id => id)))
+            throw new InvalidOperationException("The starting roster changed before scene loading.");
+        foreach (var p in value.Players)
+        {
+            if (p.Data == null || !p.Data.TryGetValue("IsReady", out var ready) || ready.Value != "True" ||
+                !p.Data.TryGetValue("ConnectionTokenHash", out var hash) || string.IsNullOrEmpty(hash.Value) ||
+                (p.Data.TryGetValue("LeaveRequested", out var leave) && leave.Value == "True") ||
+                (p.Id != value.HostId && (!p.Data.TryGetValue("StartAck", out var ack) || ack.Value != value.Data["TransitionId"].Value)) ||
+                hash.Value != expected.Players.First(e => e.Id == p.Id).Data["ConnectionTokenHash"].Value)
+                throw new InvalidOperationException("A participant left, changed registration or withdrew readiness before scene loading.");
+        }
     }
 
     public async Task JoinMatchAsync(Lobby source, string token, string destination, string menu)
@@ -486,7 +535,10 @@ public class MatchConnectionCoordinator : MonoBehaviour
             stage = "Idle";
             // Do not leave a persistent raycast-blocking overlay above a usable menu.
             screen?.Hide();
-            FindAnyObjectByType<LobbyManager>()?.ShowNotice(fromResults ? "" : reason + " You can try again.");
+            var menu = FindAnyObjectByType<LobbyManager>();
+            menu?.ConnectionRecoveryFinished(lobby != null
+                ? "Lobby cleanup is incomplete. Create or Join will retry it before continuing."
+                : fromResults ? "" : reason + " You can try again.");
             Trace("RecoveryComplete", "menu unlocked");
         }
         else screen?.ShowError(reason + "\nRecovery failed; restart the game.", false);
@@ -501,16 +553,50 @@ public class MatchConnectionCoordinator : MonoBehaviour
 
     private async Task CleanupLobbyAsync()
     {
+        try { await CompletePendingCleanupAsync(); }
+        catch (Exception e) { Trace("CleanupLobby", ErrorDescription(e), warning: true); }
+    }
+
+    // Keep the actual SDK task after a timeout: retrying must not overlap an
+    // uncertain delete/removal, or allow its late reply into a newer session.
+    public async Task CompletePendingCleanupAsync()
+    {
         Lobby oldLobby = lobby;
-        lobby = null;
         if (oldLobby == null) return;
-        try
+        if (TransitionActive && !returning)
+            throw new InvalidOperationException("A match transition still owns the lobby.");
+        if (cleanupRequest == null)
         {
             Trace("CleanupLobby", ownsLobby ? "delete owned lobby" : "remove local membership");
-            if (ownsLobby) await Bounded(LobbyService.Instance.DeleteLobbyAsync(oldLobby.Id), 10);
-            else await Bounded(LobbyService.Instance.RemovePlayerAsync(oldLobby.Id, localPlayerId), 10);
+            cleanupRequest = ownsLobby ? LobbyService.Instance.DeleteLobbyAsync(oldLobby.Id)
+                : LobbyService.Instance.RemovePlayerAsync(oldLobby.Id, localPlayerId);
         }
-        catch (Exception e) { Trace("CleanupLobby", ErrorDescription(e), warning: true); }
+        Task request = cleanupRequest;
+        try { await Bounded(request, 10); }
+        catch (LobbyServiceException e) when (e.Reason == LobbyExceptionReason.LobbyNotFound ||
+            e.Reason == LobbyExceptionReason.PlayerNotFound) { }
+        catch (LobbyServiceException e) when (e.Reason == LobbyExceptionReason.Forbidden)
+        {
+            if (cleanupRequest == request) cleanupRequest = null;
+            var joined = await Bounded(LobbyService.Instance.GetJoinedLobbiesAsync(), 10);
+            if (!ReferenceEquals(lobby, oldLobby)) return;
+            if (!joined.Contains(oldLobby.Id)) { lobby = null; return; }
+            Lobby latest = await Bounded(LobbyService.Instance.GetLobbyAsync(oldLobby.Id), 10);
+            if (!ReferenceEquals(lobby, oldLobby)) return;
+            if (latest.HostId == localPlayerId) throw;
+            // Host migration revoked deletion permission. Retire only our own
+            // membership under the service's current authority.
+            ownsLobby = false;
+            await CompletePendingCleanupAsync();
+            return;
+        }
+        catch
+        {
+            if (request.IsCompleted && cleanupRequest == request) cleanupRequest = null;
+            throw;
+        }
+        if (ReferenceEquals(lobby, oldLobby)) lobby = null;
+        if (cleanupRequest == request) cleanupRequest = null;
     }
 
     private void EnsureCurrent(int operation)
@@ -541,6 +627,7 @@ public class MatchConnectionCoordinator : MonoBehaviour
     private void OnDestroy()
     {
         if (Instance != this) return;
+        generation++;
         DetachNetworkEvents();
         if (screen != null) screen.ReturnRequested -= DismissFailure;
         Instance = null;

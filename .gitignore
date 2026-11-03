@@ -40,6 +40,7 @@ ExportedObj/
 !Tests/Tracks/Tracks.Tests.csproj
 !Tests/Recoil/Recoil.Tests.csproj
 !Tests/NetworkPresentation/Interpolation.Tests.csproj
+!Tests/LobbyFlow/LobbyFlow.Tests.csproj
 *.unityproj
 *.sln
 *.suo
