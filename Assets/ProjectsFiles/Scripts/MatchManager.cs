@@ -222,20 +222,20 @@ public class MatchManager : NetworkBehaviour
     public bool TryResolveProjectile(ulong shooter, uint shot) => IsServer && IsSpawned && resolvedProjectiles.Add((shooter, shot));
 
     public void PublishProjectileResult(ulong shooter, uint shot, ulong target, bool impact,
-        Vector3 point, Vector3 normal, bool diagnostics)
+        Vector3 point, Vector3 normal, bool diagnostics, float flightAge = -1f)
     {
         if (!IsServer || !IsSpawned) return;
-        ProjectileResultRpc(shooter, shot, target, impact, point, normal, NetworkManager.ServerTime.Time, diagnostics);
+        ProjectileResultRpc(shooter, shot, target, impact, point, normal, NetworkManager.ServerTime.Time, diagnostics, flightAge);
     }
 
     [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
     private void ProjectileResultRpc(ulong shooter, uint shot, ulong target, bool impact,
-        Vector3 point, Vector3 normal, double confirmedAt, bool diagnostics)
+        Vector3 point, Vector3 normal, double confirmedAt, bool diagnostics, float flightAge)
     {
         if (MatchResults.LocalFinal != null) return;
         TankShooter.TraceShot(diagnostics, shooter, shot, target,
             impact ? "projectile-result-impact" : "projectile-result-no-impact", confirmedAt);
-        Projectiles.Resolve(shooter, shot, impact, point, normal);
+        Projectiles.Resolve(shooter, shot, impact, point, normal, flightAge);
     }
 
     public bool TryGetShotTeam(ulong shooterObjectId, out int team)

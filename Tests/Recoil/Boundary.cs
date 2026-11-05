@@ -3,6 +3,19 @@
 using System;
 using System.Collections.Generic;
 using N=System.Numerics;
+namespace Unity.Cinemachine
+{
+    public class CinemachineBrain { public UnityEngine.Camera OutputCamera; }
+    public static class CinemachineCore
+    {
+        public static readonly CameraEvent CameraUpdatedEvent=new();
+        public class CameraEvent
+        {
+            public void AddListener(Action<CinemachineBrain> listener) { }
+            public void RemoveListener(Action<CinemachineBrain> listener) { }
+        }
+    }
+}
 namespace UnityEngine
 {
     public class SerializeField:Attribute { }
@@ -122,7 +135,7 @@ namespace UnityEngine
     }
     public static class Shader { public static int PropertyToID(string property)=>property.GetHashCode(); }
     public static class Debug { public static List<string> Errors=new();public static void LogError(string message,Object context)=>Errors.Add(message);public static void Log(string s,Object context=null) { } }
-    public static class Time { public static float time,deltaTime=1f/60,fixedDeltaTime=.02f;public static double realtimeSinceStartupAsDouble; }
+    public static class Time { public static float time,deltaTime=1f/60,fixedDeltaTime=.02f;public static double realtimeSinceStartupAsDouble; public static int frameCount; }
     public struct LayerMask { public static implicit operator LayerMask(int n)=>default; }
     public enum RigidbodyConstraints { FreezeAll }
     public enum RigidbodyInterpolation { None,Interpolate }
@@ -239,7 +252,7 @@ public class Bullet:UnityEngine.Component
 public class ShotPresentation
 {
     public bool Accept=true;private HashSet<(ulong,uint)> registered=new();
-    public bool Register(ulong tank,uint shot,UnityEngine.GameObject effect,float life,TankCameraShake shake)=>Accept && registered.Add((tank,shot));
+    public bool Register(ulong tank,uint shot,UnityEngine.GameObject effect,float life,TankCameraShake shake,bool diagnostics=false)=>Accept && registered.Add((tank,shot));
 }
 public static class PoolManager
 {

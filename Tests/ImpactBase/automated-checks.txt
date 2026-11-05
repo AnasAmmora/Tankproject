@@ -1,0 +1,19 @@
+Unity 6000.4.7f1; final source imported and compiled through Unity MCP.
+Final Console query: 0 error/warning entries.
+Final Editor: Edit Mode, GameScene, sceneDirty=false.
+
+PASS Projectile.Tests: 27 production projectile lifecycle assertions; simulated physics/RPC boundary.
+PASS Combat.Tests: 71 combat/presentation assertions; simulated engine/RPC boundary.
+PASS Recoil.Tests: 98 recoil assertions; simulated boundary.
+PASS verify_scene.py: only the two base visual changes and CurvedWorld renderer registrations.
+PASS base-asset-checks.json: dimensions, mesh sharing, materials, variant, no visual physics/network components.
+PASS summarize_timing.py: 20 changed-version peer/shot records, one effect each; same-frame contacts where frame markers exist.
+PASS destruction-check.txt: actual host authority, hidden renderers/colliders, active spawned network root, duplicate damage rejected.
+PASS git diff --check.
+
+NOT PASSED DamageFeatureChecks.RunAssetChecks: stale Full-strength range assertion (expects full range 20; saved profile is 5). Damage profile unchanged.
+NOT VALID DiscardedAttempt/baseline100*: obsolete SetDebugSimulatorParameters has no effect; excluded from latency evidence.
+
+All dotnet outputs redirected to project Temp/ImpactBase{Projectile,Combat,Recoil} using BaseIntermediateOutputPath, MSBuildProjectExtensionsPath and BaseOutputPath overrides.
+Actual network samples use two Unity Editor processes, loopback Unity Transport, client NetworkSimulator for the valid 100 ms per-direction run.
+No standalone build or Relay/Internet test was performed. See README.md for full limits.

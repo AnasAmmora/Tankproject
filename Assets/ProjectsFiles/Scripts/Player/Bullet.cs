@@ -30,6 +30,10 @@ public class Bullet : MonoBehaviour
     private uint shotId;
     private bool diagnostics;
     private Vector3 sourcePosition;
+    private double launchedAt;
+    private bool confirmedImpactPending;
+    private float confirmedFlightAge;
+    private Vector3 confirmedPoint, confirmedNormal;
 
     private void Awake()
     {
@@ -55,6 +59,8 @@ public class Bullet : MonoBehaviour
         sourcePosition = transform.position;
         ignoredColliders = ownerColliders;
         impactHandled = false;
+        confirmedImpactPending = false;
+        launchedAt = Time.timeAsDouble;
         launched = true;
         col.enabled = true;
         rb.position = transform.position;
@@ -144,11 +150,43 @@ public class Bullet : MonoBehaviour
             NetworkObject target = other.GetComponentInParent<NetworkObject>();
             // The local RPC also releases this instance. Do not read its fields afterwards.
             match.PublishProjectileResult(shooterId, shotId, target != null ? target.NetworkObjectId : ulong.MaxValue,
-                true, point, normal, diagnostics);
+                true, point, normal, diagnostics, (float)(Time.timeAsDouble - launchedAt));
             return;
         }
-        // A cosmetic contact hides this flight only. It is not an explosion, hit
-        // confirmation or force. The match-scoped record survives pool reuse.
+        // Present at this peer's visible contact, without waiting for the launch
+        // request -> server flight -> result trip. Confirmation owns all gameplay.
+        presentation?.PredictImpact(shooterId, shotId, point, normal);
+        DestroyBullet();
+    }
+
+    public bool ConfirmImpactIfShot(ulong source, uint sequence, Vector3 point, Vector3 normal, float flightAge)
+    {
+        if (!launched || shooterId != source || shotId != sequence) return false;
+        confirmedPoint = point;
+        confirmedNormal = normal;
+        confirmedFlightAge = Mathf.Clamp(flightAge, 0f, maxLifetime);
+        confirmedImpactPending = true;
+        // Same-peer flight duration, not buffered NGO ServerTime or RTT. Never
+        // fast-forward the authoritative projectile, which would alter damage.
+        if (impactHandled || Time.timeAsDouble - launchedAt >= confirmedFlightAge) CompleteConfirmedImpact();
+        return true;
+    }
+
+    private void LateUpdate()
+    {
+        if (launched && confirmedImpactPending && Time.timeAsDouble - launchedAt >= confirmedFlightAge)
+            CompleteConfirmedImpact();
+    }
+
+    private void CompleteConfirmedImpact()
+    {
+        // Fallback for a moving/despawned target no longer intersecting the local
+        // flight. Snap its final contact to the confirmed point and consume once.
+        impactHandled = true;
+        col.enabled = false;
+        transform.position = confirmedPoint;
+        TankShooter.TraceShot(diagnostics, shooterId, shotId, ulong.MaxValue, "projectile-confirmed-contact");
+        presentation?.PredictImpact(shooterId, shotId, confirmedPoint, confirmedNormal);
         DestroyBullet();
     }
 
@@ -164,6 +202,10 @@ public class Bullet : MonoBehaviour
         shotId = 0;
         diagnostics = false;
         sourcePosition = Vector3.zero;
+        launchedAt = 0d;
+        confirmedImpactPending = false;
+        confirmedPoint = confirmedNormal = Vector3.zero;
+        confirmedFlightAge = 0f;
     }
 
     private void DestroyBullet()
@@ -185,6 +227,7 @@ public class Bullet : MonoBehaviour
     private void Expire()
     {
         if (!launched) return;
+        if (confirmedImpactPending) { CompleteConfirmedImpact(); return; }
         MatchManager match = MatchManager.Instance;
         if (match != null && match.TryResolveProjectile(shooterId, shotId))
         {

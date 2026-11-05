@@ -72,7 +72,7 @@ namespace UnityEngine
     public class Collider:Component { public bool isTrigger,enabled=true;public Vector3 ClosestPoint(Vector3 p)=>transform.position; }
     public struct RaycastHit { public Collider collider;public Vector3 point,normal;public float distance; }
     public static class Physics { public static Vector3 gravity=new(0,-9.81f,0);public static bool GetIgnoreLayerCollision(int a,int b)=>false; }
-    public static class Time { public static float fixedDeltaTime=.02f; }
+    public static class Time { public static float fixedDeltaTime=.02f; public static double timeAsDouble; }
 }
 namespace Unity.Netcode
 {
@@ -109,8 +109,8 @@ public class MatchManager
     private readonly HashSet<(ulong,uint)> resolved=new();
     public bool TryGetShotTeam(ulong shooter,out int team) { team=0;return true; }
     public bool TryResolveProjectile(ulong shooter,uint sequence)=>Unity.Netcode.NetworkManager.Singleton.IsServer && resolved.Add((shooter,sequence));
-    public void PublishProjectileResult(ulong shooter,uint sequence,ulong target,bool impact,UnityEngine.Vector3 point,UnityEngine.Vector3 normal,bool diagnostics)
-    { Results++;Projectiles.Resolve(shooter,sequence,impact,point,normal); }
+    public void PublishProjectileResult(ulong shooter,uint sequence,ulong target,bool impact,UnityEngine.Vector3 point,UnityEngine.Vector3 normal,bool diagnostics,float flightAge=-1)
+    { Results++;Projectiles.Resolve(shooter,sequence,impact,point,normal,flightAge); }
 }
 public static class PoolManager
 {

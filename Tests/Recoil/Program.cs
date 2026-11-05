@@ -33,7 +33,7 @@ static class Program
             Set(Recoil,"movement",Motor);Set(Shooter,"recoil",Recoil);
             Set(Shooter,"muzzlePoint",Root.transform);
             var prefab=new GameObject();prefab.Add<Bullet>();Set(Shooter,"bulletPrefab",prefab);
-            Call(Motor,"Awake");Call(Recoil,"Awake");Call(Shooter,"Awake");
+            Call(Motor,"Awake");Call(Shooter,"Awake");
             Call(Motion,"Awake");
         }
         public Vector3 Pending=>Get<Vector3>(Motor,"pendingImpulse");

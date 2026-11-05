@@ -1,0 +1,1 @@
+phase2 server players=1:75,0:75 bases=0:25,1:50

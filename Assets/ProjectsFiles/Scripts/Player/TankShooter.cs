@@ -198,8 +198,9 @@ public class TankShooter : NetworkBehaviour
             Debug.LogError("TankShooter requires MatchManager and bulletPrefab with Bullet.", this);
             return false;
         }
+        bool trace = diagnostics ?? logHitTiming;
         if (!match.Projectiles.Register(NetworkObjectId, shotId, definition.ImpactEffectPrefab,
-            definition.EffectLifetime, IsOwner ? ownerShake : null)) return false;
+            definition.EffectLifetime, IsOwner ? ownerShake : null, trace)) return false;
         Quaternion bulletRotation = Quaternion.LookRotation(dir);
         GameObject bulletInstance = PoolManager.Get(bulletPrefab, pos, bulletRotation);
 
@@ -213,7 +214,6 @@ public class TankShooter : NetworkBehaviour
         if (TryGetComponent<PlayerState>(out PlayerState pState))
             myTeamIndex = pState.teamIndex.Value;
 
-        bool trace = diagnostics ?? logHitTiming;
         bullet.Launch(dir, ownerColliders, myTeamIndex, NetworkObjectId, shotId, trace);
         TraceShot(trace, NetworkObjectId, shotId, ulong.MaxValue, "projectile-launched");
 
@@ -239,7 +239,7 @@ public class TankShooter : NetworkBehaviour
         Debug.Log($"[HitTiming] node={manager.LocalClientId} shot={shooterId}:{shotId} " +
             $"target={targetId} stage={stage} timeline={manager.ServerTime.Time:F4} " +
             $"confirmStamp={confirmedAt:F4} localMark={Time.realtimeSinceStartupAsDouble:F4} " +
-            $"elapsedHere={elapsed:F4}");
+            $"elapsedHere={elapsed:F4} frame={Time.frameCount}");
     }
 
     private Vector3 GetAimDirection()

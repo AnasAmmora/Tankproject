@@ -1,0 +1,1 @@
+{ accepted = True, hp = 0, destroyed = True, active = True, spawned = True, renderersHidden = True, collidersHidden = True, duplicateRejected = True }

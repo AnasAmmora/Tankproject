@@ -30,7 +30,7 @@ static class ProjectileTests
         var victim=Victim();var bullet=Create(1);int fx=UnityEngine.Object.Effects;
         Call(bullet,"OnTriggerEnter",victim.GetComponent<Collider>());
         Check(!bullet.gameObject.active && victim.GetComponent<PlayerHealth>().DamageCalls==0,"Cosmetic collision releases flight but cannot damage");
-        Check(UnityEngine.Object.Effects==fx && victim.GetComponent<PlayerMovement>().Impulses==0,"Cosmetic collision cannot explode or push");
+        Check(UnityEngine.Object.Effects==fx+1 && victim.GetComponent<PlayerMovement>().Impulses==0,"Cosmetic collision plays visual impact immediately without gameplay push");
         Launch(bullet,2);
         MatchManager.Instance.Projectiles.Resolve(100,1,true,new Vector3(5,0,0),Vector3.up);
         Check(bullet.gameObject.active && UnityEngine.Object.Effects==fx+1,"Late confirmation after actual Bullet.OnDisable/relaunch preserves new flight");
@@ -38,6 +38,31 @@ static class ProjectileTests
         Check(bullet.gameObject.active,"Actual Bullet generation guard rejects stale release");
         MatchManager.Instance.Projectiles.Resolve(100,2,false,Vector3.zero,Vector3.zero);
         Check(!bullet.gameObject.active && !bullet.TimerScheduled,"Rejection clears active flight and lifetime callback");
+
+        // Early observer confirmation must not truncate a younger visible flight.
+        Time.timeAsDouble=10;
+        var early=Create(40); fx=UnityEngine.Object.Effects;
+        MatchManager.Instance.Projectiles.Resolve(100,40,true,new Vector3(12,0,0),Vector3.up,.24f);
+        Check(early.gameObject.active && UnityEngine.Object.Effects==fx,"Early confirmation waits for the local flight age");
+        Time.timeAsDouble=10.23;Call(early,"LateUpdate");
+        Check(early.gameObject.active,"No premature truncation one frame before confirmed flight duration");
+        Time.timeAsDouble=10.25;Call(early,"LateUpdate");
+        Check(!early.gameObject.active && UnityEngine.Object.Effects==fx+1,"Missing local contact reconciles once at confirmed flight duration");
+        MatchManager.Instance.Projectiles.Resolve(100,40,true,Vector3.zero,Vector3.up,.24f);
+        Check(UnityEngine.Object.Effects==fx+1,"Duplicate early confirmation cannot replay effects");
+
+        var rejected=Create(41);fx=UnityEngine.Object.Effects;
+        Call(rejected,"OnTriggerEnter",victim.GetComponent<Collider>());
+        MatchManager.Instance.Projectiles.Resolve(100,41,false,Vector3.zero,Vector3.zero);
+        Check(UnityEngine.Object.Effects==fx+1 && victim.GetComponent<PlayerHealth>().DamageCalls==0,"Rejected prediction stays cosmetic and cannot replay or damage");
+
+        var confirmed=Create(42);fx=UnityEngine.Object.Effects;
+        MatchManager.Instance.Projectiles.Resolve(100,42,true,new Vector3(12,0,0),Vector3.up,.24f);
+        Call(confirmed,"OnTriggerEnter",victim.GetComponent<Collider>());
+        Check(!confirmed.gameObject.active && UnityEngine.Object.Effects==fx+1,"Local contact wins while confirmed fallback is pending");
+        Launch(confirmed,43);Time.timeAsDouble+=1;Call(confirmed,"LateUpdate");
+        Check(confirmed.gameObject.active,"Pooled relaunch clears the preceding shot's deferred confirmation");
+        confirmed.ReleaseIfShot(100,43);
 
         MatchManager.Instance=new MatchManager();NetworkManager.Singleton.IsServer=true;
         bullet=Create(1);victim=Victim();var friendly=Victim(0);var farther=Victim();

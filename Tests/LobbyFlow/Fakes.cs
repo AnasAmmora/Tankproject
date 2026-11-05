@@ -457,6 +457,7 @@ public class Bullet : UnityEngine.Component
 {
     public ulong Shooter; public uint Sequence; public bool Active=true; public int Releases;
     public Action Disabled;
+    public bool ConfirmImpactIfShot(ulong shooter,uint sequence,UnityEngine.Vector3 point,UnityEngine.Vector3 normal,float age) => false;
     public void ReleaseIfShot(ulong shooter,uint sequence)
     { if (!Active || Shooter!=shooter || Sequence!=sequence) return; Active=false; Releases++; Disabled?.Invoke(); }
 }

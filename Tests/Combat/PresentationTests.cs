@@ -42,6 +42,19 @@ static partial class Program
         Assert(!pooled.Active,"Match teardown releases remaining active flight, tolerating detach callbacks");
         Assert(shots.Register(100,1,effect,2,shake),"New match clears old terminal identities");
 
+        shots.Clear(); fx=UnityEngine.Object.Instantiations; int shakes=shake.Hits;
+        shots.Register(200,1,effect,2,shake);
+        shots.PredictImpact(200,1,new Vector3(3,0,0),Vector3.up);
+        Assert(UnityEngine.Object.Instantiations==fx+1 && shake.Hits==shakes,"Prediction presents visuals without confirmed hit shake");
+        shots.Resolve(200,1,true,new Vector3(4,0,0),Vector3.up);
+        Assert(UnityEngine.Object.Instantiations==fx+1 && shake.Hits==shakes+1,"Server disagreement confirms feedback without replaying the predicted burst");
+        Assert(UnityEngine.Object.LastInstantiationPosition.x==3,"Completed particles/audio remain at the visible local contact");
+        shots.Resolve(200,1,true,Vector3.zero,Vector3.up); shots.PredictImpact(200,1,Vector3.zero,Vector3.up);
+        Assert(UnityEngine.Object.Instantiations==fx+1 && shake.Hits==shakes+1,"Repeated contact and confirmation are idempotent");
+        shots.Register(200,2,effect,2,shake);shots.PredictImpact(200,2,Vector3.zero,Vector3.up);
+        shots.Resolve(200,2,false,Vector3.zero,Vector3.zero);
+        Assert(UnityEngine.Object.Instantiations==fx+2 && shake.Hits==shakes+1,"Rejected cosmetic prediction never confirms hit feedback");
+
         var f=Fixture();
         Assert(f.match.TryResolveProjectile(100,1) && !f.match.TryResolveProjectile(100,1),"Server claims terminal processing once per shot");
         Assert(f.match.TryResolveProjectile(101,1),"Sequence is scoped by shooter identity");

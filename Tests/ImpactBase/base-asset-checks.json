@@ -1,0 +1,25 @@
+{
+  "pass": true,
+  "bounds": "Center: (0.00, 0.00, 0.00), Extents: (0.50, 0.50, 0.50)",
+  "triangles": 836,
+  "materialSlots": 3,
+  "redVariant": "Variant",
+  "bases": [
+    {
+      "name": "Team1Base",
+      "teamIndex": 0,
+      "maxHealth": 50,
+      "position": "(70.60, 1.96, 4.89)",
+      "visualMaterial": "BunkerBlue",
+      "shader": "Tank Project/Curved World/Lit"
+    },
+    {
+      "name": "Team2Base",
+      "teamIndex": 1,
+      "maxHealth": 50,
+      "position": "(19.36, 1.91, 4.13)",
+      "visualMaterial": "BunkerRed",
+      "shader": "Tank Project/Curved World/Lit"
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+#if UNITY_EDITOR
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using UnityEditor;
+using UnityEngine;
+using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
+using Unity.Multiplayer.Tools.NetworkSimulator.Runtime;
+
+// Explicit, temporary two-process transport fixture. No saved scene mutations.
+[InitializeOnLoad]
+internal static class ImpactTimingSession
+{
+    const string Folder = "C:/Users/anasa/Desktop/Tankproject/Tests/ImpactBase/";
+    const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
+    static bool started, configured, fired, hooked;
+    static int phase = -1;
+    static double began, changed;
+    static string label;
+    static readonly StringBuilder buffer = new StringBuilder();
+    static ImpactTimingSession() { EditorApplication.update += Tick; }
+    static bool Main => !Application.dataPath.Replace('\\', '/').Contains("/Library/VP/");
+    static void Log(string message, string stack, LogType type)
+    {
+        if (message.Contains("[HitTiming]") || type == LogType.Exception || type == LogType.Error)
+            buffer.AppendLine(message + (type == LogType.Exception ? "\n" + stack : ""));
+    }
+    static void Tick()
+    {
+        if (!File.Exists(Folder + "command.txt")) return;
+        string[] command;
+        try { command = File.ReadAllText(Folder + "command.txt").Trim().Split(','); }
+        catch (IOException) { return; }
+        if (command.Length < 3) return;
+        label = command[0];
+        if (!hooked) { Application.logMessageReceived += Log; hooked = true; }
+        if (!EditorApplication.isPlaying)
+        {
+            started = configured = fired = false; phase = -1; began = EditorApplication.timeSinceStartup;
+            if (!Main && !EditorApplication.isCompiling && !EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != "GameScene")
+                    UnityEditor.SceneManagement.EditorSceneManager.OpenScene("Assets/ProjectsFiles/Scenes/GameScene.unity");
+                EditorApplication.isPlaying = true;
+            }
+            return;
+        }
+        if (EditorApplication.isCompiling) return;
+        EditorApplication.QueuePlayerLoopUpdate();
+        try { Run(command); if (buffer.Length > 0) { File.AppendAllText(Folder + label + "-" + (Main ? "host" : "client") + ".log", buffer.ToString()); buffer.Clear(); } }
+        catch (Exception error) { File.WriteAllText(Folder + "error-" + (Main ? "host" : "client") + ".txt", error.ToString()); }
+    }
+    static void Run(string[] command)
+    {
+        Application.runInBackground = true;
+        var network = NetworkManager.Singleton;
+        if (!started)
+        {
+            if (EditorApplication.timeSinceStartup - began < 2) return;
+            if (network == null) network = UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/ProjectsFiles/Prefabes/Managers/NetworkManager.prefab")).GetComponent<NetworkManager>();
+            network.GetComponent<MatchConnectionCoordinator>().enabled = false;
+            network.NetworkConfig.ConnectionApproval = false;
+            network.NetworkConfig.EnableSceneManagement = true;
+            var transport = network.GetComponent<UnityTransport>();
+            transport.SetConnectionData("127.0.0.1", 17879, "127.0.0.1");
+            // Apply on the client link only: delay each direction once, no double injection.
+            if (!Main)
+            {
+                var simulator = network.gameObject.AddComponent<NetworkSimulator>();
+                simulator.ConnectionPreset = NetworkSimulatorPreset.Create("Impact validation", packetDelayMs: int.Parse(command[2]));
+            }
+            if (!(Main ? network.StartHost() : network.StartClient())) throw new Exception("Transport startup failed");
+            started = true;
+            var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            wall.name = "Impact Timing Wall"; wall.transform.position = new Vector3(40, 15, 12);
+            wall.transform.localScale = new Vector3(4, 5, .5f);
+        }
+        if (!network.IsConnectedClient || MatchManager.Instance == null || !MatchManager.Instance.IsSpawned) return;
+        if (network.IsServer)
+        {
+            foreach (var client in network.ConnectedClientsList)
+                if (client.PlayerObject == null) UnityEngine.Object.Instantiate(network.NetworkConfig.PlayerPrefab).GetComponent<NetworkObject>().SpawnAsPlayerObject(client.ClientId);
+            if (network.ConnectedClientsList.Count >= 2 && !configured)
+            {
+                var rules = (MatchRules)typeof(MatchManager).GetField("rules", Hidden).GetValue(MatchManager.Instance);
+                foreach (var client in network.ConnectedClientsList)
+                {
+                    var state = client.PlayerObject.GetComponent<PlayerState>();
+                    state.teamIndex.Value = (int)client.ClientId; state.spawnOrdinal.Value = (int)client.ClientId; state.isPrepared.Value = true;
+                    rules.Register(client.ClientId, client.PlayerObject.NetworkObjectId, "Timing " + client.ClientId, (int)client.ClientId, (int)client.ClientId);
+                }
+                rules.Start(network.ServerTime.Time, 3600);
+                MatchManager.Instance.phase.Value = (int)MatchRules.Stage.Regulation;
+                configured = true;
+            }
+        }
+        var local = network.LocalClient.PlayerObject;
+        if (local == null || !local.GetComponent<PlayerState>().isPrepared.Value) return;
+        local.GetComponent<PlayerMovement>().enabled = false;
+        local.GetComponent<Rigidbody>().isKinematic = true;
+        local.GetComponent<Rigidbody>().position = new Vector3(35 + (int)network.LocalClientId * 10, 15, -5);
+        local.transform.position = local.GetComponent<Rigidbody>().position;
+        int requested = int.Parse(command[1]);
+        if (requested != phase) { phase = requested; changed = EditorApplication.timeSinceStartup; fired = false; }
+        if (phase < 0 || fired || EditorApplication.timeSinceStartup - changed < 3 || !MatchManager.Instance.Running) return;
+        bool hostFires = phase % 2 == 1;
+        if (Main != hostFires) { fired = true; return; }
+        var shooter = local.GetComponent<TankShooter>();
+        typeof(TankShooter).GetField("logHitTiming", Hidden).SetValue(shooter, true);
+        uint sequence = (uint)(phase + 1);
+        Vector3 origin = new Vector3(40, 15, 0), direction = Vector3.forward;
+        if (command.Length > 3 && command[3] == "base")
+        {
+            var target = UnityEngine.Object.FindObjectsByType<TeamBase>(FindObjectsSortMode.None).First(b => b.teamIndex != (int)network.LocalClientId);
+            origin = target.transform.position + new Vector3(0, 0, -3);
+            direction = (target.transform.position - origin).normalized;
+        }
+        if (command.Length > 3 && command[3] == "terrain")
+        {
+            origin = new Vector3(21, 5, 7); direction = Vector3.down;
+        }
+        if (command.Length > 3 && command[3] == "player")
+        {
+            var target = UnityEngine.Object.FindObjectsByType<PlayerHealth>(FindObjectsSortMode.None).First(p => p.IsSpawned && p.OwnerClientId != network.LocalClientId);
+            var point = target.GetComponent<Collider>().bounds.center;
+            origin = point + new Vector3(0, 0, -3);
+            direction = (point - origin).normalized;
+        }
+        typeof(TankShooter).GetMethod("SpawnBulletLocally", Hidden).Invoke(shooter, new object[] { origin, direction, sequence, (bool?)true });
+        typeof(TankShooter).GetMethod("FireServerRpc", Hidden).Invoke(shooter, new object[] { origin, direction, sequence, true, network.ServerTime.Time, Vector3.zero });
+        fired = true;
+        File.WriteAllText(Folder + label + "-phase-" + phase + "-fired.txt", "role=" + (Main ? "host" : "client") + " RTT=" + network.GetComponent<UnityTransport>().GetCurrentRtt(0));
+    }
+}
+#endif
