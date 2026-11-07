@@ -3813,6 +3813,7 @@ GameObject:
   - component: {fileID: 7085084057009642684}
   - component: {fileID: 920230001}
   - component: {fileID: 1101094388009536895}
+  - component: {fileID: 6924470158557417585}
   m_Layer: 6
   m_Name: Player
   m_TagString: Untagged
@@ -4396,6 +4397,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HostShotHistory
   ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &6924470158557417585
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6930759457325569799}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 94c86364049c4e645af4634a862b7c67, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerTeamVisuals
+  ShowTopMostFoldoutHeaderGroup: 1
+  armorRenderers:
+  - {fileID: 3624755369711014603}
+  - {fileID: 8924127872379200457}
+  blueArmor: {fileID: 2100000, guid: 7ea4a4afb4d56d74db2b8ecaa0b5ca8c, type: 2}
+  redArmor: {fileID: 2100000, guid: 71d6748eec6a3404788d85823cd6062a, type: 2}
 --- !u!1 &7072648326952660084
 GameObject:
   m_ObjectHideFlags: 0
