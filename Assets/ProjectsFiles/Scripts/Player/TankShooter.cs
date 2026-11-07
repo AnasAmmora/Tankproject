@@ -15,6 +15,12 @@ public class TankShooter : NetworkBehaviour
     [SerializeField] private float fireCooldown = 0.4f;
     [Tooltip("Firing recoil on this tank's root. Queued immediately after a successful local owner launch.")]
     [SerializeField] private TankRecoil recoil;
+    [Header("Client to Host timing (server)")]
+    [SerializeField] private bool compensateHostShots = true;
+    [SerializeField, Range(0.05f, 0.4f)] private float maximumHostCompensation = 0.35f;
+    [Tooltip("Clock convergence and scheduling tolerance; does not enlarge the compensation cap.")]
+    [SerializeField, Range(0.02f, 0.2f)] private float shotClockTolerance = 0.18f;
+    private Bullet lastSpawnedBullet;
 
     [Header("Aiming")]
     [SerializeField] private Camera aimCamera;
@@ -141,17 +147,38 @@ public class TankShooter : NetworkBehaviour
         }
         ownerShake?.ShakeOnFire();
 
-        FireServerRpc(muzzlePoint.position, direction, shotId, logHitTiming, firedAt, recoilImpulse);
+        double viewAt = firedAt;
+        foreach (var player in NetworkManager.SpawnManager.SpawnedObjectsList)
+            if (player.IsPlayerObject && player.OwnerClientId == Unity.Netcode.NetworkManager.ServerClientId)
+            {
+                player.GetComponent<TankNetworkTransform>()?.TryGetRenderTime(out viewAt);
+                if (logHitTiming)
+                    TraceShot(true, NetworkObjectId, shotId, player.NetworkObjectId,
+                        $"local-host-view{viewAt:F4}-root{player.transform.position:F4}-body{player.GetComponent<Rigidbody>().position:F4}-model{player.GetComponent<PlayerMovement>().PresentedModelPosition:F4}-muzzle{muzzlePoint.position:F4}-direction{direction:F4}");
+            }
+        FireServerRpc(muzzlePoint.position, direction, shotId, logHitTiming, firedAt, recoilImpulse,
+            HostShotHistory.PhysicalNow(NetworkManager), viewAt);
     }
 
     [ServerRpc]
-    private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics, double firedAt, Vector3 recoilImpulse)
+    private void FireServerRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics, double firedAt, Vector3 recoilImpulse,
+        double actionTime, double viewTime)
     {
         if (shotId <= lastServerShot) return; // Never reject a duplicate of an already active shot.
         lastServerShot = shotId;
-        if (!MatchManager.CanControl(GetComponent<PlayerHealth>()) ||
+        double now = NetworkManager.ServerTime.Time;
+        double rtt = IsOwner ? 0d : NetworkManager.NetworkConfig.NetworkTransport.GetCurrentRtt(OwnerClientId) * .001d;
+        bool useHistory = compensateHostShots && !IsOwner && HostShotHistory.Current != null;
+        bool invalidTime = useHistory && (!HostShotHistory.Finite(actionTime) || !HostShotHistory.Finite(viewTime) ||
+            actionTime > now + .08d || actionTime < now - rtt * .5d - shotClockTolerance || viewTime > actionTime ||
+            viewTime < actionTime - rtt * .5d - .25d);
+        if (!HostShotHistory.Finite(spawnPos.sqrMagnitude) || !HostShotHistory.Finite(aimDir.sqrMagnitude) ||
+            Mathf.Abs(aimDir.sqrMagnitude - 1f) > .01f || invalidTime ||
+            !MatchManager.CanControl(GetComponent<PlayerHealth>()) ||
             NetworkManager.ServerTime.Time + 1d / Mathf.Max(1, NetworkManager.NetworkConfig.TickRate) < nextServerFireAt)
         {
+            TraceShot(diagnostics, NetworkObjectId, shotId, ulong.MaxValue,
+                $"shot-rejected-clock{invalidTime}-age{now-actionTime:F3}-viewAge{actionTime-viewTime:F3}-rtt{rtt:F3}");
             MatchManager match = MatchManager.Instance;
             if (match != null && match.TryResolveProjectile(NetworkObjectId, shotId))
                 match.PublishProjectileResult(NetworkObjectId, shotId, ulong.MaxValue, false, spawnPos, Vector3.zero, diagnostics);
@@ -162,6 +189,12 @@ public class TankShooter : NetworkBehaviour
         if (!IsOwner)
         {
             if (!SpawnBulletLocally(spawnPos, aimDir, shotId, diagnostics)) return;
+            if (useHistory)
+            {
+                double accepted = Math.Clamp(actionTime, now - maximumHostCompensation, now);
+                lastSpawnedBullet.ConfigureHostCompensation(
+                    accepted, Math.Clamp(viewTime, now - maximumHostCompensation, accepted), HostShotHistory.Current);
+            }
             PresentRemoteFiring(shotId, firedAt, recoilImpulse, diagnostics);
         }
 
@@ -215,6 +248,7 @@ public class TankShooter : NetworkBehaviour
             myTeamIndex = pState.teamIndex.Value;
 
         bullet.Launch(dir, ownerColliders, myTeamIndex, NetworkObjectId, shotId, trace);
+        lastSpawnedBullet = bullet;
         TraceShot(trace, NetworkObjectId, shotId, ulong.MaxValue, "projectile-launched");
 
         if (IsClient) ShotFired?.Invoke();

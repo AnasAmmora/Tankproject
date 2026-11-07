@@ -34,6 +34,104 @@ public class Bullet : MonoBehaviour
     private bool confirmedImpactPending;
     private float confirmedFlightAge;
     private Vector3 confirmedPoint, confirmedNormal;
+    private HostShotHistory hostHistory;
+    private bool compensated;
+    private uint hostGeneration;
+    private double acceptedFire, targetView, simulatedAge;
+    private Vector3 initialVelocity;
+    private float trajectoryStep;
+    private bool reportedHistoryGap;
+    private bool reportedHistoryNear;
+    private readonly RaycastHit[] timingHits = new RaycastHit[32];
+    private readonly Collider[] timingOverlaps = new Collider[32];
+
+    public void ConfigureHostCompensation(double fire, double view, HostShotHistory history)
+    {
+        hostHistory = history; compensated = true;
+        // Life boundaries are permanent. A missing pose is not a life boundary:
+        // fail closed for that segment, then try later segments in the same life.
+        hostGeneration = view >= history.GenerationStartedAt ? history.Generation : uint.MaxValue;
+        reportedHistoryGap = false;
+        reportedHistoryNear = false;
+        if (diagnostics)
+            TankShooter.TraceShot(true, shooterId, shotId, history.NetworkObjectId,
+                $"host-history-launch-eligible{hostGeneration == history.Generation}-sample{history.Sample(view, out _, out _)}-fire{fire:F4}-view{view:F4}");
+        acceptedFire = fire; targetView = view; simulatedAge = 0;
+        initialVelocity = rb.linearVelocity; trajectoryStep = Time.fixedDeltaTime;
+        rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
+        rb.isKinematic = true; rb.useGravity = false;
+    }
+
+    private Vector3 FlightPosition(double age)
+    {
+        int n = (int)System.Math.Floor(age / trajectoryStep);
+        float remainder = (float)(age - n * (double)trajectoryStep);
+        return sourcePosition + initialVelocity * (float)age + Physics.gravity *
+            (trajectoryStep * trajectoryStep * n * (n + 1) * .5f + trajectoryStep * (n + 1) * remainder);
+    }
+
+    private void StepHostFlight()
+    {
+        double desired = System.Math.Min(maxLifetime, System.Math.Max(0, NetworkManager.Singleton.ServerTime.Time - acceptedFire));
+        if (desired - simulatedAge > .5d) { Expire(); return; }
+        var box = (BoxCollider)col;
+        Vector3 extents = Vector3.Scale(box.size * .5f, transform.lossyScale);
+        Quaternion rotation = rb.rotation;
+        Vector3 offset = rotation * Vector3.Scale(box.center, transform.lossyScale);
+        for (int step = 0; step < 80 && launched && simulatedAge < desired - .000001d; step++)
+        {
+            double endAge = System.Math.Min(desired, simulatedAge + .005d);
+            Vector3 start = FlightPosition(simulatedAge) + offset, end = FlightPosition(endAge) + offset;
+            Vector3 delta = end - start; float distance = delta.magnitude;
+            if (diagnostics && hostHistory != null && !reportedHistoryNear &&
+                hostHistory.Sample(targetView + simulatedAge, out Vector3 sampledHost, out _) &&
+                (sampledHost - start).sqrMagnitude < 4f)
+            {
+                reportedHistoryNear = true;
+                TankShooter.TraceShot(true, shooterId, shotId, hostHistory.NetworkObjectId,
+                    $"host-history-near-query{targetView + simulatedAge:F4}-host{sampledHost:F4}-from{start:F4}-to{end:F4}-eligible{hostGeneration == hostHistory.Generation}");
+            }
+            Collider other = null; Vector3 point = default, normal = default; float fraction = float.PositiveInfinity;
+            int count = Physics.OverlapBoxNonAlloc(start, extents, timingOverlaps, rotation, ~0, QueryTriggerInteraction.Ignore);
+            if (count == timingOverlaps.Length) { Expire(); return; }
+            for (int i = 0; i < count; i++)
+                if (CanHit(timingOverlaps[i]) && !IsHostCollider(timingOverlaps[i]))
+                { other = timingOverlaps[i]; point = start; normal = -delta.normalized; fraction = 0; break; }
+            if (distance > .000001f)
+            {
+                count = Physics.BoxCastNonAlloc(start, extents, delta / distance, timingHits, rotation, distance, ~0, QueryTriggerInteraction.Ignore);
+                if (count == timingHits.Length) { Expire(); return; }
+                for (int i = 0; i < count; i++)
+                    if (timingHits[i].distance / distance < fraction && CanHit(timingHits[i].collider) &&
+                        !IsHostCollider(timingHits[i].collider))
+                    { other = timingHits[i].collider; point = timingHits[i].point; normal = timingHits[i].normal; fraction = timingHits[i].distance / distance; }
+            }
+            if (hostHistory != null && hostHistory.Cast(hostGeneration, start, end, extents, rotation,
+                targetView + simulatedAge, targetView + endAge, gameObject.layer, out Collider candidate,
+                out Vector3 contact, out Vector3 contactNormal, out float t) && t < fraction - .00001f && CanHit(candidate))
+            { other = candidate; point = contact; normal = contactNormal; fraction = t; }
+            if (diagnostics && hostHistory != null && !reportedHistoryGap &&
+                !hostHistory.Sample(targetView + simulatedAge, out _, out _))
+            {
+                reportedHistoryGap = true;
+                TankShooter.TraceShot(true, shooterId, shotId, hostHistory.NetworkObjectId,
+                    $"host-history-gap-generation{hostGeneration == hostHistory.Generation}-query{targetView + simulatedAge:F4}-age{simulatedAge:F4}");
+            }
+            if (other != null)
+            {
+                simulatedAge += (endAge - simulatedAge) * fraction;
+                Vector3 velocity = initialVelocity + Physics.gravity * trajectoryStep * (float)(System.Math.Floor(simulatedAge / trajectoryStep) + 1);
+                HandleImpact(other, point, normal, velocity); return;
+            }
+            simulatedAge = endAge; rb.position = FlightPosition(simulatedAge);
+        }
+        if (launched && simulatedAge >= maxLifetime - .000001d) Expire();
+    }
+    private static bool IsHostCollider(Collider other)
+    {
+        var player = other.GetComponentInParent<PlayerHealth>();
+        return player != null && player.OwnerClientId == Unity.Netcode.NetworkManager.ServerClientId;
+    }
 
     private void Awake()
     {
@@ -60,6 +158,10 @@ public class Bullet : MonoBehaviour
         ignoredColliders = ownerColliders;
         impactHandled = false;
         confirmedImpactPending = false;
+        hostHistory = null;
+        compensated = false;
+        rb.isKinematic = false; rb.useGravity = true;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         launchedAt = Time.timeAsDouble;
         launched = true;
         col.enabled = true;
@@ -92,6 +194,7 @@ public class Bullet : MonoBehaviour
         if (!launched || impactHandled) return;
         if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.Running))
         { DestroyBullet(); return; }
+        if (compensated) { StepHostFlight(); return; }
         Vector3 velocity = rb.linearVelocity;
         // Sweep the actual collider so fast trigger projectiles do not tunnel.
         Vector3 displacement = velocity * Time.fixedDeltaTime
@@ -113,7 +216,7 @@ public class Bullet : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (!launched || impactHandled || !CanHit(other)) return;
+        if (!launched || impactHandled || compensated || !CanHit(other)) return;
         Vector3 point = other.ClosestPoint(rb.position);
         Vector3 normal = rb.position - point;
         if (normal.sqrMagnitude < 0.000001f) normal = -rb.linearVelocity;
@@ -150,7 +253,7 @@ public class Bullet : MonoBehaviour
             NetworkObject target = other.GetComponentInParent<NetworkObject>();
             // The local RPC also releases this instance. Do not read its fields afterwards.
             match.PublishProjectileResult(shooterId, shotId, target != null ? target.NetworkObjectId : ulong.MaxValue,
-                true, point, normal, diagnostics, (float)(Time.timeAsDouble - launchedAt));
+                true, point, normal, diagnostics, compensated ? 0f : (float)(Time.timeAsDouble - launchedAt));
             return;
         }
         // Present at this peer's visible contact, without waiting for the launch
@@ -203,6 +306,8 @@ public class Bullet : MonoBehaviour
         diagnostics = false;
         sourcePosition = Vector3.zero;
         launchedAt = 0d;
+        hostHistory = null;
+        compensated = false;
         confirmedImpactPending = false;
         confirmedPoint = confirmedNormal = Vector3.zero;
         confirmedFlightAge = 0f;
