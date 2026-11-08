@@ -192,7 +192,7 @@ public class Bullet : MonoBehaviour
     private void FixedUpdate()
     {
         if (!launched || impactHandled) return;
-        if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.Running))
+        if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.PresentingGameplay))
         { DestroyBullet(); return; }
         if (compensated) { StepHostFlight(); return; }
         Vector3 velocity = rb.linearVelocity;

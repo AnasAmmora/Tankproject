@@ -24,6 +24,12 @@ public class MatchHud : MonoBehaviour
     [SerializeField] private ResultRow rowPrefab;
     [SerializeField] private GameObject resultsPanel;
     [SerializeField] private Button back;
+    [SerializeField] private Button rematchButton;
+    [SerializeField] private Button startButton;
+    [SerializeField] private TMP_Text rematchLabel;
+    [SerializeField] private TMP_Text rematchStatus;
+    private static MatchHud suspended;
+    private bool rematchSuspended;
     [SerializeField] private EventSystem sceneEventSystem;
     [SerializeField] private string menuSceneName = "MainMenuScene";
     [SerializeField] private GameplayHud gameplayHud;
@@ -52,6 +58,8 @@ public class MatchHud : MonoBehaviour
         timer.text = lifeStatus.text = "";
         back.interactable = true;
         back.onClick.AddListener(OnBack);
+        rematchButton.onClick.AddListener(OnRematch);
+        startButton.onClick.AddListener(OnStartRematch);
         SceneManager.sceneLoaded += OnSceneLoaded;
         if (MatchResults.LocalFinal != null) ShowFinal();
     }
@@ -70,6 +78,10 @@ public class MatchHud : MonoBehaviour
         if (rowPrefab != null) valid &= rowPrefab.ValidateReferences();
         valid &= Required(resultsPanel, nameof(resultsPanel));
         valid &= Required(back, nameof(back));
+        valid &= Required(rematchButton, nameof(rematchButton));
+        valid &= Required(startButton, nameof(startButton));
+        valid &= Required(rematchLabel, nameof(rematchLabel));
+        valid &= Required(rematchStatus, nameof(rematchStatus));
         valid &= Required(sceneEventSystem, nameof(sceneEventSystem));
         valid &= Required(gameplayHud, nameof(gameplayHud));
         if (transform.parent != null || (matchCanvas != null && matchCanvas.gameObject != gameObject))
@@ -89,7 +101,7 @@ public class MatchHud : MonoBehaviour
 
     private void Update()
     {
-        if (!configured) return;
+        if (!configured || rematchSuspended) return;
         CaptureLocalIdentity();
         if (MatchResults.LocalFinal != null) { ShowFinal(); return; }
     }
@@ -109,6 +121,7 @@ public class MatchHud : MonoBehaviour
         if (player != null && player.TryGetComponent<PlayerCanvasController>(out var ui)) ui.RefreshVisibility();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+        RefreshRematch(result);
         if (displayed == result && displayedLocalClientId == localClientId) return;
         displayed = result;
         displayedLocalClientId = localClientId;
@@ -159,11 +172,67 @@ public class MatchHud : MonoBehaviour
             return;
         }
         back.interactable = false;
-        MatchConnectionCoordinator.Instance.ReturnFromResults();
+        var match = MatchManager.Instance;
+        var network = NetworkManager.Singleton;
+        if (match != null && match.IsSpawned && network != null && network.IsConnectedClient)
+            match.RequestResultsBack();
+        else MatchConnectionCoordinator.Instance.ReturnFromResults();
+    }
+
+    private void OnRematch()
+    {
+        var match = MatchManager.Instance;
+        if (match == null || !localClientId.HasValue || displayed == null) return;
+        var player = displayed.players.FirstOrDefault(p => p.clientId == localClientId.Value);
+        if (player != null) match.RequestRematchReady((match.rematchReady.Value & (1 << player.ordinal)) == 0);
+    }
+    private void OnStartRematch() => MatchManager.Instance?.RequestRematchStart();
+
+    private void RefreshRematch(MatchResults result)
+    {
+        var match = MatchManager.Instance;
+        var network = NetworkManager.Singleton;
+        bool connected = network != null && network.IsConnectedClient && match != null && match.IsSpawned;
+        bool starting = connected && match.RematchStarting;
+        bool cancelled = !connected || match.rematchCancelled.Value;
+        rematchButton.gameObject.SetActive(!cancelled);
+        startButton.gameObject.SetActive(!cancelled && network.IsServer);
+        rematchButton.interactable = !starting;
+        startButton.interactable = !starting && match != null && match.CanStartRematch;
+        back.interactable = !starting;
+        var local = result.players.FirstOrDefault(p => localClientId == p.clientId);
+        bool ready = connected && local != null && (match.rematchReady.Value & (1 << local.ordinal)) != 0;
+        rematchLabel.text = ready ? "Cancel Ready" : "Rematch";
+        rematchStatus.text = starting ? "Starting rematch..." : "";
+        foreach (var player in result.players)
+        {
+            var entries = player.team == 0 ? blueEntries : redEntries;
+            if (entries.TryGetValue(player.clientId, out ResultRow row))
+                row.BindReadiness(!cancelled && (match.rematchReady.Value & (1 << player.ordinal)) != 0);
+        }
+    }
+
+    public static void SuspendForRematch()
+    {
+        if (Instance == null) return;
+        suspended = Instance; Instance = null;
+        suspended.rematchSuspended = true;
+        suspended.gameplayHud.SuspendForRematch();
+        suspended.matchCanvas.enabled = suspended.uiRaycaster.enabled = suspended.sceneEventSystem.enabled = false;
+    }
+    public static void RestoreSuspended()
+    {
+        if (suspended == null) return;
+        Instance = suspended; suspended = null;
+        Instance.rematchSuspended = false;
+        Instance.gameplayHud.RestoreAfterFailedRematch();
+        Instance.matchCanvas.enabled = Instance.uiRaycaster.enabled = Instance.sceneEventSystem.enabled = true;
+        Instance.ShowFinal();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if (rematchSuspended && scene.name == "GameScene") { Destroy(gameObject); return; }
         if (scene.name != menuSceneName) return;
         matchCanvas.enabled = false;
         uiRaycaster.enabled = false;
@@ -175,9 +244,12 @@ public class MatchHud : MonoBehaviour
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         if (back != null) back.onClick.RemoveListener(OnBack);
+        if (rematchButton != null) rematchButton.onClick.RemoveListener(OnRematch);
+        if (startButton != null) startButton.onClick.RemoveListener(OnStartRematch);
         // Instantiated rows belong to this canvas and are destroyed with its root.
         blueEntries.Clear();
         redEntries.Clear();
         if (Instance == this) Instance = null;
+        if (suspended == this) suspended = null;
     }
 }

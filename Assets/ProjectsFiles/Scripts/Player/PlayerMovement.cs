@@ -28,6 +28,9 @@ public class PlayerMovement : NetworkBehaviour
     private Rigidbody rb;
     private TankInputHandler inputHandler;
     private Vector3 pendingImpulse;
+    private Vector3 pendingHitImpulse;
+    public void CancelQueuedHitImpulses()
+    { pendingImpulse -= pendingHitImpulse; pendingHitImpulse = Vector3.zero; pendingHitTraces.Clear(); }
     private RigidbodyConstraints drivingConstraints;
     private bool preparationLocked;
     private readonly ConfirmedHitVisualPrediction visualPrediction = new ConfirmedHitVisualPrediction();
@@ -92,7 +95,7 @@ public class PlayerMovement : NetworkBehaviour
     // The server confirms a hit; only the movement authority simulates its impulse.
     public void ApplyHitImpulse(Vector3 impulse, ulong shooterId, uint shotId, bool diagnostics)
     {
-        if (!IsServer || !IsSpawned) return;
+        if (!IsServer || !IsSpawned || (MatchManager.Instance != null && !MatchManager.Instance.Running)) return;
         double confirmedAt = NetworkManager.ServerTime.Time;
         TankShooter.TraceShot(diagnostics, shooterId, shotId, NetworkObjectId,
             "server-hit-confirmed", confirmedAt);
@@ -110,7 +113,7 @@ public class PlayerMovement : NetworkBehaviour
     private void ConfirmHitRpc(Vector3 impulse, ulong shooterId, uint shotId,
         double confirmedAt, float visualLead, bool diagnostics)
     {
-        if (!IsSpawned || !MatchManager.CanControl(GetComponent<PlayerHealth>()) ||
+        if (!IsSpawned || (MatchManager.Instance != null && !MatchManager.Instance.Running) || !MatchManager.CanControl(GetComponent<PlayerHealth>()) ||
             !receivedHits.Add((shooterId, shotId))) return;
         hitHistory.Enqueue((shooterId, shotId));
         if (hitHistory.Count > 128) receivedHits.Remove(hitHistory.Dequeue());
@@ -121,6 +124,7 @@ public class PlayerMovement : NetworkBehaviour
         if (IsOwner)
         {
             pendingImpulse += impulse;
+            pendingHitImpulse += impulse;
             if (diagnostics) pendingHitTraces.Add(trace);
             return;
         }
@@ -143,6 +147,7 @@ public class PlayerMovement : NetworkBehaviour
         if (!IsSpawned || !IsOwner || rb.isKinematic) return;
         SetPreparationLock(!MatchManager.CanControl(GetComponent<PlayerHealth>()));
         if (preparationLocked) return;
+        if (MatchManager.Instance != null && !MatchManager.Instance.Running) CancelQueuedHitImpulses();
 
         StepMotor(inputHandler.MoveInput, Time.fixedDeltaTime);
     }
@@ -205,6 +210,7 @@ public class PlayerMovement : NetworkBehaviour
         {
             rb.AddForce(pendingImpulse, ForceMode.Impulse);
             pendingImpulse = Vector3.zero;
+            pendingHitImpulse = Vector3.zero;
             foreach (var trace in pendingRecoilTraces)
                 (networkTransform as TankNetworkTransform)?.ImpulseApplied(trace.ShotId, trace.QueuedAt);
             pendingRecoilTraces.Clear();
@@ -243,6 +249,7 @@ public class PlayerMovement : NetworkBehaviour
             blockingNormals.Clear();
             rb.linearVelocity = rb.angularVelocity = Vector3.zero;
             pendingImpulse = Vector3.zero;
+            pendingHitImpulse = Vector3.zero;
             pendingRecoilTraces.Clear();
         }
     }
@@ -376,6 +383,7 @@ public class PlayerMovement : NetworkBehaviour
         blockingNormals.Clear();
         ResetTrackMotion();
         pendingImpulse = Vector3.zero;
+        pendingHitImpulse = Vector3.zero;
         pendingHitTraces.Clear();
         pendingRecoilTraces.Clear();
         (networkTransform as TankNetworkTransform)?.ResetLifeTracking();

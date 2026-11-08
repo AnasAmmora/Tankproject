@@ -204,7 +204,7 @@ public class TankShooter : NetworkBehaviour
     [ClientRpc]
     private void FireClientRpc(Vector3 spawnPos, Vector3 aimDir, uint shotId, bool diagnostics, double firedAt, Vector3 recoilImpulse)
     {
-        if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.Running)) return;
+        if (MatchResults.LocalFinal != null || (MatchManager.Instance != null && !MatchManager.Instance.PresentingGameplay)) return;
         // The owner already launched and queued recoil locally. Confirmation is
         // presentation for observers only, even if it arrives after a life reset.
         if (IsOwner) return;

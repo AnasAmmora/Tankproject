@@ -57,6 +57,8 @@ public sealed class MatchParticipantRoster
     }
 
     public bool TryGet(ulong clientId, out Assignment assignment) => clients.TryGetValue(clientId, out assignment);
+    public void ResetPreparation()
+    { foreach (var a in clients.Values) a.SceneSynchronized = a.Prepared = a.Ready = false; }
     public bool MarkReady(ulong clientId)
     {
         if (!clients.TryGetValue(clientId, out Assignment a) || !a.SceneSynchronized || !a.Prepared || a.Ready)

@@ -7,6 +7,7 @@ public class ResultRow : MonoBehaviour
     [SerializeField] private TMP_Text playerName;
     [SerializeField] private TMP_Text kills;
     [SerializeField] private TMP_Text deaths;
+    [SerializeField] private TMP_Text readyStatus;
     [SerializeField] private GameObject evenBackground;
     [SerializeField] private GameObject oddBackground;
     [SerializeField] private GameObject localMarker;
@@ -20,6 +21,7 @@ public class ResultRow : MonoBehaviour
         valid &= Required(playerName, nameof(playerName));
         valid &= Required(kills, nameof(kills));
         valid &= Required(deaths, nameof(deaths));
+        valid &= Required(readyStatus, nameof(readyStatus));
         valid &= Required(evenBackground, nameof(evenBackground));
         valid &= Required(oddBackground, nameof(oddBackground));
         valid &= Required(localMarker, nameof(localMarker));
@@ -43,4 +45,5 @@ public class ResultRow : MonoBehaviour
         oddBackground.SetActive(alternate);
         localMarker.SetActive(isLocal);
     }
+    public void BindReadiness(bool ready) => readyStatus.text = ready ? "Ready" : "Not Ready";
 }

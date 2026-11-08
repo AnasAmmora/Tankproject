@@ -20,6 +20,12 @@ public class MatchManager : NetworkBehaviour
     public readonly NetworkVariable<int> destroyedBases = new NetworkVariable<int>(0);
     public readonly NetworkVariable<int> winningTeam = new NetworkVariable<int>(-2);
     public readonly NetworkVariable<FixedString4096Bytes> statistics = new NetworkVariable<FixedString4096Bytes>();
+    public readonly NetworkVariable<double> resultsAt = new NetworkVariable<double>();
+    public readonly NetworkVariable<uint> roundId = new NetworkVariable<uint>(1);
+    public readonly NetworkVariable<int> rematchReady = new NetworkVariable<int>();
+    public readonly NetworkVariable<bool> rematchCancelled = new NetworkVariable<bool>();
+    private RematchRules rematch;
+    private string finalJson;
     private readonly MatchRules rules = new MatchRules();
     private uint publishedStatisticsRevision;
     private bool statisticsPublished;
@@ -28,8 +34,13 @@ public class MatchManager : NetworkBehaviour
     private readonly HashSet<ulong> finalReceipts = new HashSet<ulong>();
     public bool FinalSnapshotsDelivered => IsServer && NetworkManager.ConnectedClientsIds.All(id => finalReceipts.Contains(id));
     public bool Running => IsSpawned && (phase.Value == (int)MatchRules.Stage.Regulation || phase.Value == (int)MatchRules.Stage.Overtime);
+    public bool PresentingGameplay => Running || (IsSpawned && phase.Value == (int)MatchRules.Stage.PostMatch &&
+        NetworkManager.ServerTime.Time < resultsAt.Value);
+    public bool RematchStarting => phase.Value == (int)MatchRules.Stage.RematchStarting;
+    public bool CanStartRematch => IsServer && rematch != null && phase.Value == (int)MatchRules.Stage.Finished &&
+        FinalSnapshotsDelivered && rematch.CanStart(NetworkManager.ConnectedClientsIds);
     public static bool CanControl(PlayerHealth health) => MatchConnectionCoordinator.GameplayAllowed &&
-        (Instance == null || Instance.Running) && (health == null || (!health.isDead.Value && health.isPreparedForLife &&
+        (Instance == null || Instance.PresentingGameplay) && (health == null || (!health.isDead.Value && health.isPreparedForLife &&
         (!health.IsOwner || health.GetComponent<PlayerLook>() == null || health.GetComponent<PlayerLook>().LocalCameraReady)));
     private readonly NetworkVariable<bool> matchStarted = new NetworkVariable<bool>(false);
     private readonly Dictionary<ulong, Coroutine> preparation = new Dictionary<ulong, Coroutine>();
@@ -48,17 +59,27 @@ public class MatchManager : NetworkBehaviour
         statisticsPublished = false;
         feedbackSequence = lastFeedbackSequence = 0;
         coordinator = MatchConnectionCoordinator.Instance;
+        if (IsServer)
+        {
+            roundId.Value = coordinator != null ? coordinator.RoundId : 1;
+            NetworkManager.OnClientDisconnectCallback += OnDisconnected;
+        }
         MatchConnectionCoordinator.Trace("MatchManager spawned", "rulesPhase=" + rules.Phase);
         if (IsServer && !ValidateBases()) { coordinator?.Fail("GameScene requires exactly one networked base for each team (0 and 1)."); return; }
         matchStarted.OnValueChanged += OnStartedChanged;
         if (coordinator == null || !coordinator.TransitionActive) return;
-        if (IsServer) NetworkManager.OnClientDisconnectCallback += OnDisconnected;
         if (IsClient) StartCoroutine(WaitForLocalReadiness());
         if (matchStarted.Value) coordinator.NotifyMatchStarted();
     }
 
     private void Update()
     {
+        if (IsSpawned && phase.Value == (int)MatchRules.Stage.PostMatch && NetworkManager.ServerTime.Time >= resultsAt.Value)
+        {
+            if (IsServer) phase.Value = (int)MatchRules.Stage.Finished;
+            RevealResults();
+        }
+        if (IsSpawned && phase.Value == (int)MatchRules.Stage.Finished && MatchResults.PendingFinal != null) RevealResults();
         if (!IsSpawned || !IsServer || coordinator == null || !coordinator.TransitionActive ||
             coordinator.Roster == null || matchStarted.Value || aborted) return;
         // Scheduling by clientId prevents duplicated coroutines across load/connect events.
@@ -178,6 +199,7 @@ public class MatchManager : NetworkBehaviour
 
     private void OnDisconnected(ulong clientId)
     {
+        if (rematch != null) { rematch.Disconnect(clientId); PublishRematch(); }
         if (preparation.TryGetValue(clientId, out Coroutine routine) && routine != null) StopCoroutine(routine);
         preparation.Remove(clientId);
         if (rules.Running) rules.Disconnect(clientId);
@@ -242,7 +264,7 @@ public class MatchManager : NetworkBehaviour
     {
         var player = rules.Players.Values.FirstOrDefault(p => p.objectId == shooterObjectId);
         team = player != null ? player.team : -1;
-        return IsServer && rules.Running && player != null;
+        return IsServer && PresentingGameplay && player != null;
     }
 
     public void RecordDeath(PlayerHealth health, ulong attackerObjectId, Vector3? sourcePosition = null,
@@ -348,8 +370,14 @@ public class MatchManager : NetworkBehaviour
         PublishState();
         if (rules.Phase == MatchRules.Stage.Finished)
         {
-            PoolManager.ReleaseActiveBullets();
-            FinishRpc(statistics.Value.ToString());
+            finalJson = statistics.Value.ToString();
+            rematch = new RematchRules(roundId.Value, rules.Players.Values);
+            if (!rematch.Present(NetworkManager.ConnectedClientsIds)) rematch.Cancel();
+            PublishRematch();
+            coordinator?.LockResultsSession();
+            resultsAt.Value = now + 5d;
+            phase.Value = (int)MatchRules.Stage.PostMatch;
+            FinishRpc(finalJson);
         }
     }
 
@@ -384,11 +412,90 @@ public class MatchManager : NetworkBehaviour
     [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
     private void FinishRpc(string json)
     {
-        MatchResults.Store(json);
+        MatchResults.StorePending(json);
+        foreach (var player in FindObjectsByType<PlayerMovement>()) player.CancelQueuedHitImpulses();
+        FinalReceivedRpc();
+    }
+
+    private void RevealResults()
+    {
+        MatchResults.RevealPending();
+        if (MatchResults.LocalFinal == null) return;
         Projectiles.Clear();
         PoolManager.ReleaseActiveBullets();
         MatchHud.Instance?.ShowFinal();
-        FinalReceivedRpc();
+    }
+
+    private void PublishRematch()
+    { rematchReady.Value = rematch.ReadyMask; rematchCancelled.Value = rematch.Phase == RematchRules.State.Cancelled; }
+
+    public void RequestRematchReady(bool ready) => RematchReadyRpc(roundId.Value, ready);
+    public void RequestRematchStart() => RematchStartRpc(roundId.Value);
+    public void RequestResultsBack() => ResultsBackRpc(roundId.Value);
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RematchReadyRpc(uint round, bool ready, RpcParams rpc = default)
+    {
+        if (phase.Value != (int)MatchRules.Stage.Finished || rematch == null) return;
+        rematch.SetReady(round, rpc.Receive.SenderClientId, ready, NetworkManager.ConnectedClientsIds);
+        PublishRematch();
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void ResultsBackRpc(uint round, RpcParams rpc = default)
+    {
+        if (!NetworkManager.ConnectedClients.ContainsKey(rpc.Receive.SenderClientId) ||
+            rematch == null || !rematch.Back(round, rpc.Receive.SenderClientId)) return;
+        PublishRematch(); BackAcceptedRpc(round, rpc.Receive.SenderClientId);
+    }
+
+    [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
+    private void BackAcceptedRpc(uint round, ulong client)
+    {
+        if (round != roundId.Value || NetworkManager.LocalClientId != client) return;
+        coordinator?.ReturnFromResults();
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RematchStartRpc(uint round, RpcParams rpc = default)
+    {
+        if (phase.Value != (int)MatchRules.Stage.Finished || rematch == null || coordinator == null ||
+            !FinalSnapshotsDelivered ||
+            !rematch.Start(round, rpc.Receive.SenderClientId, NetworkManager.ConnectedClientsIds)) return;
+        phase.Value = (int)MatchRules.Stage.RematchStarting; // Atomic lock before notifying peers.
+        BeginRematchRpc(round, round + 1);
+        StartCoroutine(StartRematch(round));
+    }
+
+    [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
+    private void BeginRematchRpc(uint oldRound, uint newRound)
+    { if (roundId.Value == oldRound) coordinator?.PrepareRematch(newRound); }
+
+    private IEnumerator StartRematch(uint round)
+    {
+        yield return null; yield return null; // Let the lock/overlay reach connected peers.
+        if (!rematch.Present(NetworkManager.ConnectedClientsIds))
+        { coordinator.Fail("A rematch participant disconnected before loading."); yield break; }
+        SceneEventProgressStatus status;
+        try { status = NetworkManager.SceneManager.LoadScene(gameObject.scene.name, UnityEngine.SceneManagement.LoadSceneMode.Single); }
+        catch (System.Exception e) { RestoreRematchRpc(round, round + 1, e.Message); yield break; }
+        if (status != SceneEventProgressStatus.Started) RestoreRematchRpc(round, round + 1, "Could not start rematch: " + status);
+    }
+
+    [Rpc(SendTo.Everyone, InvokePermission = RpcInvokePermission.Server)]
+    private void RestoreRematchRpc(uint failedRound, uint sessionRound, string reason)
+    {
+        if (coordinator == null || coordinator.RoundId != sessionRound ||
+            (roundId.Value != failedRound && roundId.Value != sessionRound)) return;
+        if (IsServer)
+        {
+            roundId.Value = sessionRound;
+            rematch = new RematchRules(sessionRound, rules.Players.Values);
+            if (!rematch.Present(NetworkManager.ConnectedClientsIds)) rematch.Cancel();
+            PublishRematch();
+            phase.Value = (int)MatchRules.Stage.Finished;
+        }
+        coordinator.RestoreResults(sessionRound, reason);
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]

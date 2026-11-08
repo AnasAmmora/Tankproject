@@ -5,7 +5,7 @@ using System.Linq;
 // Server-owned rules, separated from Unity presentation and transport for verification.
 public sealed class MatchRules
 {
-    public enum Stage { Preparing, Regulation, Overtime, Finished }
+    public enum Stage { Preparing, Regulation, Overtime, Finished, PostMatch, RematchStarting }
     [Serializable] public sealed class PlayerRecord
     {
         public ulong clientId;

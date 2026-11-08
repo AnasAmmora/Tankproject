@@ -137,8 +137,10 @@ public class GameplayHud : MonoBehaviour
     private PlayerHealth FindHealth(ulong clientId)
     {
         var network = NetworkManager.Singleton;
-        var obj = network != null && network.SpawnManager != null ? network.SpawnManager.GetPlayerNetworkObject(clientId) : null;
-        return obj != null ? obj.GetComponent<PlayerHealth>() : null;
+        if (network == null || network.SpawnManager == null) return null;
+        foreach (var obj in network.SpawnManager.SpawnedObjectsList)
+            if (obj.IsPlayerObject && obj.OwnerClientId == clientId) return obj.GetComponent<PlayerHealth>();
+        return null;
     }
     private void ObserveNotices()
     {
@@ -247,6 +249,18 @@ public class GameplayHud : MonoBehaviour
         }
     }
     private void OnDisable() => UnbindMatch();
+    public void SuspendForRematch()
+    {
+        PlayerHealth.Spawned -= OnPlayerSpawned;
+        UnbindMatch(); enabled = false;
+        if (Instance == this) Instance = null;
+    }
+    public void RestoreAfterFailedRematch()
+    {
+        Instance = this; enabled = true;
+        PlayerHealth.Spawned -= OnPlayerSpawned;
+        PlayerHealth.Spawned += OnPlayerSpawned;
+    }
     private void OnDestroy()
     {
         PlayerHealth.Spawned -= OnPlayerSpawned;

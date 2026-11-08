@@ -29,6 +29,9 @@ public class MatchConnectionCoordinator : MonoBehaviour
     [SerializeField, Min(15f)] private float transitionTimeout = 90f;
     public bool TransitionActive { get; private set; }
     public bool MatchStarted { get; private set; }
+    public uint RoundId { get; private set; } = 1;
+    private bool resultsConnectionLocked;
+    private string retainedResults;
     public bool LocalSceneSynchronized { get; private set; }
     public int ExpectedCount { get; private set; }
     public MatchParticipantRoster Roster { get; private set; }
@@ -97,6 +100,8 @@ public class MatchConnectionCoordinator : MonoBehaviour
             throw new InvalidOperationException("Another connection transition is already active.");
         lobby = source;
         MatchResults.Clear();
+        resultsConnectionLocked = false;
+        RoundId++;
         localPlayerId = AuthenticationService.Instance.PlayerId;
         ownsLobby = source.HostId == localPlayerId;
         transitionId = id;
@@ -338,7 +343,7 @@ public class MatchConnectionCoordinator : MonoBehaviour
         response.Reason = "This match is closed to new participants.";
         try
         {
-            if (!TransitionActive || MatchStarted || returning || Roster == null || request.Payload == null || request.Payload.Length > 2048)
+            if (!TransitionActive || MatchStarted || resultsConnectionLocked || returning || Roster == null || request.Payload == null || request.Payload.Length > 2048)
                 return;
             ConnectionTicket ticket = JsonUtility.FromJson<ConnectionTicket>(Encoding.UTF8.GetString(request.Payload));
             if (ticket == null || ticket.LobbyId != lobby.Id || ticket.TransitionId != transitionId) return;
@@ -428,6 +433,34 @@ public class MatchConnectionCoordinator : MonoBehaviour
         screen.Hide();
     }
 
+    public void LockResultsSession() => resultsConnectionLocked = true;
+
+    public void PrepareRematch(uint nextRound)
+    {
+        if (returning || !network.IsListening || nextRound != RoundId + 1) return;
+        retainedResults = MatchResults.LocalFinal != null ? JsonUtility.ToJson(MatchResults.LocalFinal) : MatchResults.PendingFinal;
+        RoundId = nextRound;
+        resultsConnectionLocked = true;
+        MatchStarted = LocalSceneSynchronized = false;
+        deadline = Time.realtimeSinceStartupAsDouble + transitionTimeout;
+        if (network.IsServer) Roster?.ResetPreparation();
+        MatchHud.SuspendForRematch();
+        MatchResults.Clear();
+        PoolManager.Clear();
+        screen?.Show("Loading rematch");
+        SetStage("RematchLoading");
+    }
+
+    public void RestoreResults(uint round, string reason)
+    {
+        RoundId = round;
+        MatchStarted = LocalSceneSynchronized = true;
+        if (!string.IsNullOrEmpty(retainedResults)) MatchResults.Store(retainedResults);
+        screen?.Hide();
+        MatchHud.RestoreSuspended();
+        Trace("RematchStartFailed", reason, warning: true);
+    }
+
     public string ParticipantName(string playerId)
     {
         if (lobby?.Players != null)
@@ -442,6 +475,7 @@ public class MatchConnectionCoordinator : MonoBehaviour
     {
         if (!TransitionActive || returning || quitting) return;
         Trace("Disconnected", "client=" + clientId + " reason=" + network.DisconnectReason, warning: true);
+        if (MatchResults.PendingFinal != null) MatchResults.RevealPending();
         if (MatchResults.LocalFinal != null) { MatchHud.Instance?.ShowFinal(); return; }
         if (clientId == network.LocalClientId || (!network.IsServer && !network.IsConnectedClient))
             Fail(string.IsNullOrEmpty(network.DisconnectReason) ? "Disconnected from the match host." : network.DisconnectReason);
@@ -451,12 +485,14 @@ public class MatchConnectionCoordinator : MonoBehaviour
 
     private void OnTransportFailure()
     {
+        if (MatchResults.PendingFinal != null) MatchResults.RevealPending();
         if (MatchResults.LocalFinal != null) { MatchHud.Instance?.ShowFinal(); return; }
         Fail("The network transport failed. Returning to the menu.");
     }
 
     public void ReturnFromResults()
     {
+        if (MatchManager.Instance != null && MatchManager.Instance.RematchStarting) return;
         if (returning || MatchResults.LocalFinal == null) return;
         returning = true;
         MatchStarted = false;
