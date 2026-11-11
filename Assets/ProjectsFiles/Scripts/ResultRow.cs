@@ -45,5 +45,9 @@ public class ResultRow : MonoBehaviour
         oddBackground.SetActive(alternate);
         localMarker.SetActive(isLocal);
     }
-    public void BindReadiness(bool ready) => readyStatus.text = ready ? "Ready" : "Not Ready";
+    public void BindReadiness(bool ready)
+    {
+        readyStatus.text = ready ? "Ready" : "Not Ready";
+        readyStatus.color = ready ? new Color(1f, .52f, .1f) : new Color(.79f, .76f, .68f);
+    }
 }

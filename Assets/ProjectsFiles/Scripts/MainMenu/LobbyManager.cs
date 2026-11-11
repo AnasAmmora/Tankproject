@@ -429,7 +429,10 @@ public class LobbyManager : MonoBehaviour
         {
             bool ready = player.Data != null && player.Data.TryGetValue("IsReady", out PlayerDataObject value) && value.Value == "True";
             string name = player.Data != null && player.Data.TryGetValue("PlayerName", out PlayerDataObject label) ? label.Value : "Unknown";
-            text += name + (ready ? " <color=green>[Ready]</color>\n" : " <color=red>[Not Ready]</color>\n");
+            // Truncate display only; keep the full persisted/network identity intact.
+            var elements = new System.Globalization.StringInfo(name);
+            string display = elements.LengthInTextElements > 22 ? elements.SubstringByTextElements(0, 22) + "…" : name;
+            text += "<noparse>" + display + "</noparse>" + (ready ? " <color=#FF8520>[Ready]</color>\n" : " <color=#C9C1AD>[Not Ready]</color>\n");
             if (player.Id == AuthenticationService.Instance.PlayerId) isReady = ready;
         }
         playersListText.text = text;
