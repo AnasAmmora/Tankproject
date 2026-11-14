@@ -28,15 +28,17 @@ public sealed class UISelectionFeedback : MonoBehaviour, IPointerEnterHandler, I
     private void Refresh()
     {
         if (label == null || indicator == null) return;
-        bool available = (control != null ? control : GetComponent<Selectable>()).IsInteractable();
+        var selectable = control != null ? control : GetComponent<Selectable>();
+        bool available = isActiveAndEnabled && selectable.IsActive() && selectable.IsInteractable();
         wasAvailable = available;
-        indicator.SetActive(available && (hovered || selected));
+        indicator.SetActive(available && hovered);
         label.color = !available ? new Color(cream.r, cream.g, cream.b, .38f) : pressed ? orange : cream;
     }
     // Server-driven enabled/disabled controls update without changing their events.
     private void LateUpdate()
     {
-        bool available = control != null && control.IsInteractable();
+        bool available = control != null && control.IsActive() && control.IsInteractable();
+        if (!available) hovered = pressed = false;
         if (available != wasAvailable) { wasAvailable = available; Refresh(); }
     }
     private bool wasAvailable;

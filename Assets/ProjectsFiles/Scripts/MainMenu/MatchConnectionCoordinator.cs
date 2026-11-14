@@ -188,7 +188,8 @@ public class MatchConnectionCoordinator : MonoBehaviour
             EnsureCurrent(operation);
             ValidateStartingRoster(finalRoster, source);
             lobby = finalRoster;
-            screen.Show("Loading");
+            await screen.ShowBeforeLoadAsync("Loading");
+            EnsureCurrent(operation);
             SetStage("LoadGameScene");
             SceneEventProgressStatus result = network.SceneManager.LoadScene(destination, LoadSceneMode.Single);
             Trace("LoadGameScene", "result=" + result);
@@ -376,7 +377,8 @@ public class MatchConnectionCoordinator : MonoBehaviour
             if (sceneEvent.ClientId == network.LocalClientId)
             {
                 LocalSceneSynchronized = true;
-                screen.Show("Waiting for players");
+                if (MatchStarted) screen.Hide();
+                else screen.Show("Waiting for players");
             }
             if (network.IsServer && Roster != null && Roster.TryGet(sceneEvent.ClientId, out var assignment))
                 assignment.SceneSynchronized = true;
@@ -430,7 +432,7 @@ public class MatchConnectionCoordinator : MonoBehaviour
         if (!TransitionActive || returning || MatchStarted) return;
         MatchStarted = true;
         SetStage("MatchBegins");
-        screen.Hide();
+        if (LocalSceneSynchronized) screen.Hide();
     }
 
     public void LockResultsSession() => resultsConnectionLocked = true;

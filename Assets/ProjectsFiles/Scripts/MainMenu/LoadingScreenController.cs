@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -56,6 +58,22 @@ public class LoadingScreenController : MonoBehaviour
         inputBlocker.enabled = true;
         status.text = message;
         returnButton.gameObject.SetActive(false);
+    }
+
+    public Task ShowBeforeLoadAsync(string message)
+    {
+        Show(message);
+        var rendered = new TaskCompletionSource<bool>();
+        StartCoroutine(WaitForPresentation(rendered));
+        return rendered.Task;
+    }
+
+    private IEnumerator WaitForPresentation(TaskCompletionSource<bool> rendered)
+    {
+        // Allow a complete frame to render before loading, including in the Editor.
+        yield return null;
+        yield return null;
+        rendered.TrySetResult(true);
     }
 
     public void ShowError(string message, bool canReturn)
